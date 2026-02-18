@@ -32,7 +32,7 @@ export default function Dashboard() {
       return;
     }
 
-    axios.get('http://localhost:5000/api/me', {
+    axios.get('/api/me', {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => {
@@ -63,8 +63,8 @@ export default function Dashboard() {
 
     try {
       const [summaryRes, lineRes] = await Promise.all([
-        axios.get(`http://localhost:5000/api/supervisor/summary?date=${selectedDate}`, { headers }),
-        axios.get(`http://localhost:5000/api/supervisor/line-performance?date=${selectedDate}`, { headers })
+        axios.get(`/api/supervisor/summary?date=${selectedDate}`, { headers }),
+        axios.get(`/api/supervisor/line-performance?date=${selectedDate}`, { headers })
       ]);
 
       if (summaryRes.data.success) {

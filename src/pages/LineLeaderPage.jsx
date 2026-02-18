@@ -412,7 +412,7 @@ export default function LineLeaderPage() {
     try {
     
       const res = await fetch(
-        `http://localhost:5000/api/lineleader/latest-run?line=${encodeURIComponent(lineNo)}`,
+        `/api/lineleader/latest-run?line=${encodeURIComponent(lineNo)}`,
         { headers: getAuthHeaders() }
       );
       const json = await res.json();
@@ -441,7 +441,7 @@ export default function LineLeaderPage() {
   async function fetchRunData(runId) {
     try {
 
-      const res = await fetch(`http://localhost:5000/api/get-run-data/${runId}`,
+      const res = await fetch(`/api/get-run-data/${runId}`,
          { headers: getAuthHeaders() });
       const json = await res.json();
 
@@ -630,7 +630,7 @@ export default function LineLeaderPage() {
         }
       }
 
-      const res = await fetch(`http://localhost:5000/api/lineleader/update-sewed/${runId}`, {
+      const res = await fetch(`/api/lineleader/update-sewed/${runId}`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({ entries }),

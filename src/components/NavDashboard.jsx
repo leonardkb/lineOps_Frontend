@@ -8,7 +8,7 @@ export default function NavDashboard({ user, onLogout }) {
   const [alertCount, setAlertCount] = useState(0);
   const navigate = useNavigate();
 
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://10.1.10.42:5000";
 
   // Fetch alert count
   const fetchAlertCount = async () => {

@@ -4,7 +4,7 @@ import axios from "axios";
 import NavAdmin from "../components/NavAdmin";
 import Alert from "../components/Alert";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://10.1.10.42:5000";
 
 function toYMD(d) {
   if (!d) return "";

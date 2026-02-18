@@ -41,7 +41,7 @@ export default function HeaderForm({ value, onChange, slots, onSaveSuccess }) {
         slots: slots || []
       };
       const token = localStorage.getItem("token");
-      const response = await fetch("http://localhost:5000/api/save-production", {
+      const response = await fetch("/api/save-production", {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",

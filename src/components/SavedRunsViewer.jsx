@@ -19,7 +19,7 @@ export default function SavedRunsViewer({ onBack }) {
     setLoading(true);
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch("http://localhost:5000/api/line-runs", {
+      const response = await fetch("/api/line-runs", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -44,7 +44,7 @@ export default function SavedRunsViewer({ onBack }) {
 
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch(`http://localhost:5000/api/run/${runId}`, {
+      const response = await fetch(`/api/run/${runId}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -72,7 +72,7 @@ export default function SavedRunsViewer({ onBack }) {
     setLoading(true);
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch(`http://localhost:5000/api/run/${selectedRun}`, {
+      const response = await fetch(`/api/run/${selectedRun}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -185,7 +185,7 @@ export default function SavedRunsViewer({ onBack }) {
       }
       const token = localStorage.getItem("token");
       const response = await fetch(
-        `http://localhost:5000/api/update-hourly-data/${selectedRun}`,
+        `/api/update-hourly-data/${selectedRun}`,
         {
           method: "POST",
           headers: {
@@ -219,7 +219,7 @@ export default function SavedRunsViewer({ onBack }) {
 
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch(`http://localhost:5000/api/add-operation/${selectedRun}`, {
+      const response = await fetch(`/api/add-operation/${selectedRun}`, {
         method: "POST",
         headers: { 
             "Content-Type": "application/json",

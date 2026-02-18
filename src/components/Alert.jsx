@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 export default function Alert({ lineNo, selectedDate }) {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://10.1.10.42:5000";
 
   // Fetch alerts for the selected line and date
   const fetchAlerts = async () => {

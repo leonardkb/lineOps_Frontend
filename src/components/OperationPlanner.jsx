@@ -285,7 +285,7 @@ export default function OperationPlanner({
         cumulativeTargets,
       };
       const token = localStorage.getItem("token");
-      const response = await fetch("http://localhost:5000/api/save-operations", {
+      const response = await fetch("/api/save-operations", {
         method: "POST",
         headers: {
              "Content-Type": "application/json",
