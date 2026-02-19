@@ -412,7 +412,7 @@ export default function LineLeaderPage() {
     try {
     
       const res = await fetch(
-        `/api/lineleader/latest-run?line=${encodeURIComponent(lineNo)}`,
+        `http://10.1.10.42:5000/api/lineleader/latest-run?line=${encodeURIComponent(lineNo)}`,
         { headers: getAuthHeaders() }
       );
       const json = await res.json();
@@ -441,7 +441,7 @@ export default function LineLeaderPage() {
   async function fetchRunData(runId) {
     try {
 
-      const res = await fetch(`/api/get-run-data/${runId}`,
+      const res = await fetch(`http://10.1.10.42:5000/api/get-run-data/${runId}`,
          { headers: getAuthHeaders() });
       const json = await res.json();
 
@@ -630,7 +630,7 @@ export default function LineLeaderPage() {
         }
       }
 
-      const res = await fetch(`/api/lineleader/update-sewed/${runId}`, {
+      const res = await fetch(`http://10.1.10.42:5000/api/lineleader/update-sewed/${runId}`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({ entries }),
@@ -728,7 +728,8 @@ export default function LineLeaderPage() {
         </div>
 
         {saveMsg ? (
-          <div className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+          <div className="mt-4 rounded-2xl border
+           border-green-200 bg-green-50 p-3 text-sm text-green-800">
             {saveMsg}
           </div>
         ) : null}
@@ -867,7 +868,8 @@ export default function LineLeaderPage() {
                           <button
                             type="button"
                             onClick={() => toggleOperator(operatorId)}
-                            className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold hover:bg-gray-50"
+                            className="rounded-xl border bg-white px-4 py-2
+                             text-sm font-semibold hover:bg-gray-50"
                           >
                             {isOpen ? "Ocultar" : "Mostrar"}
                           </button>

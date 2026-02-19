@@ -32,7 +32,7 @@ export default function Dashboard() {
       return;
     }
 
-    axios.get('/api/me', {
+    axios.get('http://10.1.10.42:5000/api/me', {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => {
@@ -63,8 +63,8 @@ export default function Dashboard() {
 
     try {
       const [summaryRes, lineRes] = await Promise.all([
-        axios.get(`/api/supervisor/summary?date=${selectedDate}`, { headers }),
-        axios.get(`/api/supervisor/line-performance?date=${selectedDate}`, { headers })
+        axios.get(`http://10.1.10.42:5000/api/supervisor/summary?date=${selectedDate}`, { headers }),
+        axios.get(`http://10.1.10.42:5000/api/supervisor/line-performance?date=${selectedDate}`, { headers })
       ]);
 
       if (summaryRes.data.success) {
@@ -161,7 +161,9 @@ export default function Dashboard() {
 
         {/* Error message with animation */}
         {error && (
-          <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-6 py-4 rounded-xl mb-8 animate-slideDown flex items-center gap-3 shadow-md">
+          <div className="bg-red-50 border-l-4 border-red-500
+           text-red-700 px-6 py-4 rounded-xl mb-8 animate-slideDown
+            flex items-center gap-3 shadow-md">
             <div>
               <p className="font-semibold">Error al cargar datos</p>
               <p className="text-sm text-red-600">{error}</p>
@@ -172,11 +174,15 @@ export default function Dashboard() {
         {/* Summary Cards with modern design */}
         {!loading && summary && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+            <div className="bg-white rounded-2xl shadow-lg p-6 
+            border border-gray-100 hover:shadow-xl transition-all
+             duration-300 transform hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-1">Objetivo Total</p>
-                  <p className="text-3xl font-bold text-gray-900">{formatNumber(summary.totalTarget)}</p>
+                  <p className="text-sm font-medium text-gray-500 
+                  uppercase tracking-wider mb-1">Objetivo Total</p>
+                  <p className="text-3xl font-bold
+                   text-gray-900">{formatNumber(summary.totalTarget)}</p>
                   <p className="text-xs text-gray-500 mt-2">piezas</p>
                 </div>
               </div>

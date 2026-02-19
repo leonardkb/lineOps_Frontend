@@ -144,9 +144,11 @@ export default function ViewEditOperationPlanner({
   return (
     <div className="rounded-2xl border bg-white shadow-sm">
       <div className="px-5 py-4 border-b">
-        <h2 className="font-semibold text-gray-900">Operaciones y seguimiento por hora</h2>
+        <h2 className="font-semibold text-gray-900">Operaciones y 
+          seguimiento por hora</h2>
         <p className="text-sm text-gray-600">
-          Consulta y actualiza las cantidades cosidas por hora. Los cambios se guardan por separado.
+          Consulta y actualiza las cantidades cosidas por hora. 
+          Los cambios se guardan por separado.
         </p>
       </div>
 

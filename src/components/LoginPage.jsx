@@ -16,7 +16,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await axios.post("/api/login", {
+      const response = await axios.post("http://10.1.10.42:5000/api/login", {
         username,
         password
       });
@@ -133,7 +133,7 @@ export default function LoginPage() {
         <div className="mt-4 text-xs text-center">
           <button
             onClick={() =>
-              window.open("/api/health", "_blank")
+              window.open("http://10.1.10.42:5000/api/health", "_blank")
             }
             className="text-blue-500 hover:underline"
           >
