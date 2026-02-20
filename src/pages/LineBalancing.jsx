@@ -53,7 +53,7 @@ export default function LineBalancing() {
     }
 
     try {
-      const res = await fetch("http://localhost:5000/api/line-runs", {
+      const res = await fetch("http://10.1.10.42:5000/api/line-runs", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -86,7 +86,7 @@ export default function LineBalancing() {
     setAssignments([]);
 
     try {
-      const res = await fetch(`http://localhost:5000/api/engineer/line-balancing/${runId}`, {
+      const res = await fetch(`http://10.1.10.42:5000/api/engineer/line-balancing/${runId}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -204,7 +204,7 @@ export default function LineBalancing() {
         }))
       };
 
-      const res = await fetch(`http://localhost:5000/api/engineer/line-balancing/${selectedRunId}/assign`, {
+      const res = await fetch(`http://10.1.10.42:5000/api/engineer/line-balancing/${selectedRunId}/assign`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
