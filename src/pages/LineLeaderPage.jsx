@@ -415,7 +415,7 @@ export default function LineLeaderPage() {
 
     try {
       const res = await fetch(
-        `http://localhost:5000/api/lineleader/latest-run?line=${encodeURIComponent(lineNo)}`,
+        `http://10.1.10.42:5000/api/lineleader/latest-run?line=${encodeURIComponent(lineNo)}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -455,7 +455,7 @@ export default function LineLeaderPage() {
     }
 
     try {
-      const res = await fetch(`http://localhost:5000/api/get-run-data/${runId}`, {
+      const res = await fetch(`http://10.1.10.42:5000/api/get-run-data/${runId}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -508,7 +508,7 @@ export default function LineLeaderPage() {
     if (!token) return;
 
     try {
-      const res = await fetch(`http://localhost:5000/api/lineleader/assignments/${runId}`, {
+      const res = await fetch(`http://10.1.10.42:5000/api/lineleader/assignments/${runId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json();
@@ -758,7 +758,7 @@ export default function LineLeaderPage() {
         }
       }
 
-      const res = await fetch(`http://localhost:5000/api/lineleader/update-sewed/${runId}`, {
+      const res = await fetch(`http://10.1.10.42:5000/api/lineleader/update-sewed/${runId}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
