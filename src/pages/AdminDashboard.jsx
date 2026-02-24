@@ -224,130 +224,127 @@ export default function AdminDashboard() {
   }, [selectedLine, selectedDate, initialLoadAttempted]);
 
   const fetchProductionData = async (isManual = true) => {
-  if (!selectedLine || !selectedDate) {
-    if (isManual) alert("Por favor seleccione línea y fecha");
-    return;
-  }
-
-  setLoadingData(true);
-  setAlerts([]);
-
-  try {
-    const token = localStorage.getItem("token");
-
-    const runsResponse = await axios.get(
-      `${API_BASE}/api/line-runs/${selectedLine}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-
-    if (!runsResponse.data?.success || !Array.isArray(runsResponse.data?.runs)) {
-      throw new Error("No se devolvieron corridas desde el servidor");
-    }
-
-    const selectedRun = runsResponse.data.runs.find((run) => {
-      return toYMD(run.run_date) === selectedDate;
-    });
-
-    if (!selectedRun) {
-      setRunData(null);
-      setSummary(null);
-      setOperatorDetails([]);
-      if (isManual) {
-        alert(`No se encontraron datos de producción para la Línea ${selectedLine} en ${selectedDate}`);
-      }
+    if (!selectedLine || !selectedDate) {
+      if (isManual) alert("Por favor seleccione línea y fecha");
       return;
     }
 
-    const runDetailResponse = await axios.get(
-      `${API_BASE}/api/get-run-data/${selectedRun.id}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    setLoadingData(true);
+    setAlerts([]);
 
-    if (!runDetailResponse.data?.success) {
-      throw new Error(runDetailResponse.data?.error || "No se pudo obtener el detalle de la corrida");
-    }
+    try {
+      const token = localStorage.getItem("token");
 
-    const data = runDetailResponse.data;
-    setRunData(data);
+      const runsResponse = await axios.get(
+        `${API_BASE}/api/line-runs/${selectedLine}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
-    const operatorsCount = data.operators?.length || 0;
-    const targetPcs = Number(data.run?.target_pcs || 0);
+      if (!runsResponse.data?.success || !Array.isArray(runsResponse.data?.runs)) {
+        throw new Error("No se devolvieron corridas desde el servidor");
+      }
 
-    // --- CALCULATE TOTAL SEWED AS MINIMUM ACROSS ALL OPERATIONS (BOTTLENECK) ---
-    let minSewed = Infinity;
-    const operatorData = [];
+      const selectedRun = runsResponse.data.runs.find((run) => {
+        return toYMD(run.run_date) === selectedDate;
+      });
 
-    (data.operations || []).forEach((operatorGroup) => {
-      const operator = operatorGroup.operator;
-      const operatorNo = operator.operator_no;
-
-      (operatorGroup.operations || []).forEach((operation) => {
-        // Sum sewed_qty for this operation across all slots
-        const sewedData = operation.sewed_data || {};
-        let operationSewed = 0;
-        Object.values(sewedData).forEach((qty) => {
-          operationSewed += parseFloat(qty) || 0;
-        });
-
-        // Update the global minimum
-        if (operationSewed < minSewed) {
-          minSewed = operationSewed;
+      if (!selectedRun) {
+        setRunData(null);
+        setSummary(null);
+        setOperatorDetails([]);
+        if (isManual) {
+          alert(`No se encontraron datos de producción para la Línea ${selectedLine} en ${selectedDate}`);
         }
+        return;
+      }
 
-        // Planned quantity from stitched_data (hourly targets)
-        const stitchedData = operation.stitched_data || {};
-        let operationPlanned = 0;
-        Object.values(stitchedData).forEach((qty) => {
-          operationPlanned += parseFloat(qty) || 0;
-        });
+      const runDetailResponse = await axios.get(
+        `${API_BASE}/api/get-run-data/${selectedRun.id}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
-        const capacityPerHour = Number(operation.capacity_per_hour || 0);
+      if (!runDetailResponse.data?.success) {
+        throw new Error(runDetailResponse.data?.error || "No se pudo obtener el detalle de la corrida");
+      }
 
-        operatorData.push({
-          operatorNo: operator.operator_no,
-          operatorName: operator.operator_name || `Operador ${operator.operator_no}`,
-          operationName: operation.operation_name,
-          style: data.run.style,
-          totalSewed: operationSewed,
-          plannedQty: operationPlanned,
-          capacityPerHour,
-          efficiency: capacityPerHour > 0 ? (operationSewed / capacityPerHour).toFixed(2) : "0",
+      const data = runDetailResponse.data;
+      setRunData(data);
+
+      const operatorsCount = data.operators?.length || 0;
+      const targetPcs = Number(data.run?.target_pcs || 0);
+
+      const operatorData = [];
+
+      (data.operations || []).forEach((operatorGroup) => {
+        const operator = operatorGroup.operator;
+        const operatorNo = operator.operator_no;
+
+        (operatorGroup.operations || []).forEach((operation) => {
+          const sewedData = operation.sewed_data || {};
+          let operationSewed = 0;
+          Object.values(sewedData).forEach((qty) => {
+            operationSewed += parseFloat(qty) || 0;
+          });
+
+          const stitchedData = operation.stitched_data || {};
+          let operationPlanned = 0;
+          Object.values(stitchedData).forEach((qty) => {
+            operationPlanned += parseFloat(qty) || 0;
+          });
+
+          const capacityPerHour = Number(operation.capacity_per_hour || 0);
+
+          operatorData.push({
+            operatorNo: operator.operator_no,
+            operatorName: operator.operator_name || `Operador ${operator.operator_no}`,
+            operationName: operation.operation_name,
+            style: data.run.style,
+            totalSewed: operationSewed,
+            plannedQty: operationPlanned,
+            capacityPerHour,
+            efficiency: capacityPerHour > 0 ? (operationSewed / capacityPerHour).toFixed(2) : "0",
+          });
         });
       });
-    });
 
-    const totalSewed = minSewed === Infinity ? 0 : minSewed;
+      setOperatorDetails(operatorData);
 
-    setOperatorDetails(operatorData);
+      // Calculate finished garments = sum of packing operations
+      const packingKeywords = ['pack', 'emp'];
+      const packingTotal = operatorData
+        .filter(op => packingKeywords.some(keyword => 
+          op.operationName.toLowerCase().includes(keyword)
+        ))
+        .reduce((sum, op) => sum + op.totalSewed, 0);
 
-    const generatedAlerts = generateAlertsFromOperatorData(operatorData);
-    setAlerts(generatedAlerts);
+      const generatedAlerts = generateAlertsFromOperatorData(operatorData);
+      setAlerts(generatedAlerts);
 
-    setSummary({
-      line: data.run.line_no,
-      date: toYMD(data.run.run_date),
-      style: data.run.style,
-      operatorsCount,
-      totalTarget: targetPcs,
-      totalSewed,                    // ✅ now represents the packed quantity (minimum)
-      workingHours: data.run.working_hours,
-      sam: data.run.sam_minutes,
-      efficiency: Number(data.run.efficiency || 0) * 100,
-      achievement: targetPcs > 0 ? ((totalSewed / targetPcs) * 100).toFixed(2) + "%" : "0%",
-    });
-  } catch (error) {
-    console.error("Error fetching production data:", error);
-    if (isManual) {
-      alert(error.response?.data?.error || error.message || "No se pudieron cargar los datos de producción");
+      setSummary({
+        line: data.run.line_no,
+        date: toYMD(data.run.run_date),
+        style: data.run.style,
+        operatorsCount,
+        totalTarget: targetPcs,
+        totalSewed: packingTotal,                    // ✅ now packing only
+        workingHours: data.run.working_hours,
+        sam: data.run.sam_minutes,
+        efficiency: Number(data.run.efficiency || 0) * 100,
+        achievement: targetPcs > 0 ? ((packingTotal / targetPcs) * 100).toFixed(2) + "%" : "0%",
+      });
+    } catch (error) {
+      console.error("Error fetching production data:", error);
+      if (isManual) {
+        alert(error.response?.data?.error || error.message || "No se pudieron cargar los datos de producción");
+      }
+      setRunData(null);
+      setSummary(null);
+      setOperatorDetails([]);
+      setAlerts([]);
+    } finally {
+      setLoadingData(false);
     }
-    setRunData(null);
-    setSummary(null);
-    setOperatorDetails([]);
-    setAlerts([]);
-  } finally {
-    setLoadingData(false);
-  }
-};
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("token");
