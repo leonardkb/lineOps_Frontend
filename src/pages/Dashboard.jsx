@@ -12,12 +12,14 @@ export default function Dashboard() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [summary, setSummary] = useState(null);
   const [lineData, setLineData] = useState([]);
-  // NEW: State for line balancing assignments
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
   const [hoveredCard, setHoveredCard] = useState(null);
+
+  // NEW: global real‑time target state
+  const [globalRealtimeTarget, setGlobalRealtimeTarget] = useState(0);
 
   // Detect screen size for responsive chart
   useEffect(() => {
@@ -64,7 +66,6 @@ export default function Dashboard() {
     const headers = { Authorization: `Bearer ${token}` };
 
     try {
-      // NEW: Include assignments endpoint
       const [summaryRes, lineRes, assignmentsRes] = await Promise.all([
         axios.get(`http://10.1.10.42:5000/api/supervisor/summary?date=${selectedDate}`, { headers }),
         axios.get(`http://10.1.10.42:5000/api/supervisor/line-performance?date=${selectedDate}`, { headers }),
@@ -75,9 +76,12 @@ export default function Dashboard() {
         setSummary(summaryRes.data.summary);
       }
       if (lineRes.data.success) {
-        setLineData(lineRes.data.lines);
+        const lines = lineRes.data.lines;
+        setLineData(lines);
+        // Compute global real‑time target as sum of line real‑time targets
+        const sumRealtime = lines.reduce((acc, line) => acc + (line.realtimeTarget || 0), 0);
+        setGlobalRealtimeTarget(sumRealtime);
       }
-      // NEW: Set assignments if successful
       if (assignmentsRes.data.success) {
         setAssignments(assignmentsRes.data.assignments);
       } else {
@@ -105,7 +109,7 @@ export default function Dashboard() {
     });
   };
 
-  // Get status color and icon for line cards
+  // Get status color and icon for line cards (based on variance percentage)
   const getLineStatus = (variancePct, target) => {
     if (target === 0) return { color: 'gray', icon: '⏸️', text: 'Sin Objetivo' };
     if (variancePct < -15) return { color: 'red', icon: '🔴', text: 'Crítico' };
@@ -179,9 +183,9 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Summary Cards with modern design */}
+        {/* Summary Cards – now 5 cards on large screens */}
         {!loading && summary && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5 mb-8">
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div>
@@ -226,10 +230,30 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
+
+            {/* NEW: Global real‑time target card */}
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-1">Meta en tiempo real</p>
+                  <p className="text-3xl font-bold text-gray-900">{formatNumber(globalRealtimeTarget)}</p>
+                  <p className="text-xs text-gray-500 mt-2">piezas esperadas hasta ahora</p>
+                  <div className="w-full bg-gray-200 rounded-full h-1.5 mt-3">
+                    <div
+                      className="bg-blue-600 h-1.5 rounded-full transition-all duration-500"
+                      style={{ width: `${summary.totalTarget > 0 ? (globalRealtimeTarget / summary.totalTarget) * 100 : 0}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {summary.totalTarget > 0 ? ((globalRealtimeTarget / summary.totalTarget) * 100).toFixed(1) : 0}% del objetivo global
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Line Performance Chart with enhanced styling */}
+        {/* Line Performance Chart (unchanged) */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-8 border border-gray-100">
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -304,12 +328,12 @@ export default function Dashboard() {
                     <Line
                       yAxisId="left"
                       type="monotone"
-                      dataKey="totalTarget"
+                      dataKey="realtimeTarget"
                       stroke="#8b5cf6"
                       strokeWidth={3}
                       dot={{ r: isMobile ? 4 : 6, fill: "#8b5cf6", strokeWidth: 2, stroke: "white" }}
                       activeDot={{ r: 8, fill: "#8b5cf6", stroke: "white", strokeWidth: 2 }}
-                      name="Objetivo"
+                      name="Objetivo (ahora)"
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -339,7 +363,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Line Cards with modern design */}
+        {/* Line Cards – now using real‑time target */}
         {!loading && lineData.length > 0 && (
           <div className="mt-8">
             <div className="flex items-center justify-between mb-6">
@@ -369,11 +393,11 @@ export default function Dashboard() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {lineData.map((line, idx) => {
-                const target = line.totalTarget || 0;
+                const realtimeTarget = line.realtimeTarget || 0;
                 const sewed = line.totalSewed || 0;
-                const variance = sewed - target;
-                const variancePct = target > 0 ? (variance / target) * 100 : 0;
-                const status = getLineStatus(variancePct, target);
+                const variance = sewed - realtimeTarget;
+                const variancePct = realtimeTarget > 0 ? (variance / realtimeTarget) * 100 : 0;
+                const status = getLineStatus(variancePct, realtimeTarget);
 
                 const statusColors = {
                   red: 'border-red-500 bg-red-50',
@@ -414,9 +438,9 @@ export default function Dashboard() {
                     <div className="p-5">
                       <div className="mb-4">
                         <div className="flex justify-between text-xs mb-1">
-                          <span className="text-gray-600">Progreso</span>
+                          <span className="text-gray-600">Progreso (ahora)</span>
                           <span className="font-semibold text-gray-900">
-                            {target > 0 ? ((sewed / target) * 100).toFixed(1) : '0'}%
+                            {realtimeTarget > 0 ? ((sewed / realtimeTarget) * 100).toFixed(1) : '0'}%
                           </span>
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-2">
@@ -427,15 +451,15 @@ export default function Dashboard() {
                               variancePct <= 5 ? 'bg-green-500' :
                               variancePct <= 15 ? 'bg-yellow-500' : 'bg-blue-500'
                             }`}
-                            style={{ width: `${target > 0 ? Math.min((sewed / target) * 100, 100) : 0}%` }}
+                            style={{ width: `${realtimeTarget > 0 ? Math.min((sewed / realtimeTarget) * 100, 100) : 0}%` }}
                           ></div>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-3 mb-4">
                         <div className="bg-gray-50 rounded-xl p-3">
-                          <p className="text-xs text-gray-500 mb-1">Objetivo</p>
-                          <p className="text-lg font-bold text-gray-900">{formatNumber(target)}</p>
+                          <p className="text-xs text-gray-500 mb-1">Objetivo (ahora)</p>
+                          <p className="text-lg font-bold text-gray-900">{formatNumber(realtimeTarget)}</p>
                         </div>
                         <div className="bg-gray-50 rounded-xl p-3">
                           <p className="text-xs text-gray-500 mb-1">Cosido</p>
@@ -471,7 +495,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* NEW: Assignments Table */}
+        {/* Assignments Table (unchanged) */}
         {!loading && assignments.length > 0 && (
           <div className="mt-8">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Contribuciones de ayuda</h2>
