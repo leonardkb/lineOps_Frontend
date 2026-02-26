@@ -38,14 +38,27 @@ export default function LineBalancing() {
   }, []);
 
   async function fetchRuns() {
-    try {
-      const res = await fetch("http://10.1.10.42:5000/api/line-runs");
-      const json = await res.json();
-      if (json.success) setRuns(json.runs);
-    } catch (err) {
-      setError("Error cargando corridas");
+  try {
+    const res = await fetch("http://10.1.10.42:5000/api/line-runs", {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+
+    if (res.status === 401) {
+      // Token invalid or expired – clear storage and redirect to login
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      navigate("/");
+      return;
     }
+
+    const json = await res.json();
+    if (json.success) setRuns(json.runs);
+  } catch (err) {
+    setError("Error cargando corridas");
   }
+}
 
   async function fetchBalancingData(runId) {
     setLoading(true);
