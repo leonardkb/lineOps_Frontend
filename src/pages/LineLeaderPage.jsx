@@ -507,7 +507,7 @@ export default function LineLeaderPage() {
     if (!token) return;
 
     try {
-      const res = await fetch(`http://l0.1.10.42:5000/api/lineleader/assignments/${runId}`, {
+      const res = await fetch(`http://10.1.10.42:5000/api/lineleader/assignments/${runId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json();
