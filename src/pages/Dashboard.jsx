@@ -6,20 +6,32 @@ import {
 } from 'recharts';
 import NavDashboard from '../components/NavDashboard';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://10.1.10.42:5000";
+
+function toYMD(d) {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return String(d).slice(0, 10);
+  return dt.toISOString().slice(0, 10);
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [summary, setSummary] = useState(null);
-  const [lineData, setLineData] = useState([]);
+  const [lineData, setLineData] = useState([]);               // from /line-performance
+  const [lineRunData, setLineRunData] = useState({});         // detailed run data per line
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Real‑time target states
+  const [globalRealtimeTarget, setGlobalRealtimeTarget] = useState(0);
+  const [lineRealtimeTargets, setLineRealtimeTargets] = useState({}); // computed per line
+
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
   const [hoveredCard, setHoveredCard] = useState(null);
-
-  // NEW: global real‑time target state
-  const [globalRealtimeTarget, setGlobalRealtimeTarget] = useState(0);
 
   // Detect screen size for responsive chart
   useEffect(() => {
@@ -36,7 +48,7 @@ export default function Dashboard() {
       return;
     }
 
-    axios.get('http://10.1.10.42:5000/api/me', {
+    axios.get(`${API_BASE}/api/me`, {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => {
@@ -55,9 +67,86 @@ export default function Dashboard() {
       .catch(() => {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        navigate('/login', { replace: true });
+        navigate('/', { replace: true });
       });
   }, []);
+
+  // Compute real‑time target for a given run (same logic as AdminDashboard)
+  const computeRealtimeTarget = (runData, selectedDate) => {
+    if (!runData || !selectedDate) return 0;
+
+    const now = new Date();
+    const todayStr = selectedDate;
+
+    const slots = (runData.slots || [])
+      .map(slot => {
+        const start = new Date(`${todayStr}T${slot.slot_start}`);
+        const end = new Date(`${todayStr}T${slot.slot_end}`);
+        return { ...slot, start, end };
+      })
+      .filter(s => s.start && s.end);
+
+    let cumulative = 0;
+    for (const slot of slots) {
+      const slotTarget = (runData.slotTargets || []).find(
+        st => st.slot_label === slot.slot_label
+      )?.slot_target || 0;
+      if (now >= slot.end) {
+        cumulative += Number(slotTarget);
+      } else if (now >= slot.start && now < slot.end) {
+        const elapsed = (now - slot.start) / (slot.end - slot.start);
+        cumulative += Number(slotTarget) * elapsed;
+        break;
+      } else {
+        break;
+      }
+    }
+    return Math.round(cumulative * 100) / 100;
+  };
+
+  // After lineData is loaded, fetch detailed run data for each line and compute real‑time targets
+  useEffect(() => {
+    const fetchLineDetails = async () => {
+      if (!lineData.length || !date) return;
+
+      const token = localStorage.getItem('token');
+      const headers = { Authorization: `Bearer ${token}` };
+
+      const newRunData = {};
+      const newTargets = {};
+
+      for (const line of lineData) {
+        try {
+          // Get runs for this line
+          const runsRes = await axios.get(`${API_BASE}/api/line-runs/${line.lineNo}`, { headers });
+          if (!runsRes.data.success) continue;
+
+          const run = runsRes.data.runs.find(r => toYMD(r.run_date) === date);
+          if (!run) continue;
+
+          const detailRes = await axios.get(`${API_BASE}/api/get-run-data/${run.id}`, { headers });
+          if (!detailRes.data.success) continue;
+
+          newRunData[line.lineNo] = detailRes.data;
+
+          // Compute real‑time target for this line
+          const rt = computeRealtimeTarget(detailRes.data, date);
+          newTargets[line.lineNo] = rt;
+        } catch (err) {
+          console.error(`Error fetching details for line ${line.lineNo}:`, err);
+        }
+      }
+
+      setLineRunData(newRunData);
+      setLineRealtimeTargets(newTargets);
+
+      // Update global real‑time target
+      const sum = Object.values(newTargets).reduce((a, b) => a + b, 0);
+      setGlobalRealtimeTarget(sum);
+    };
+
+    fetchLineDetails();
+  }, [lineData, date]);
 
   const fetchDashboardData = async (selectedDate) => {
     setLoading(true);
@@ -67,20 +156,16 @@ export default function Dashboard() {
 
     try {
       const [summaryRes, lineRes, assignmentsRes] = await Promise.all([
-        axios.get(`http://10.1.10.42:5000/api/supervisor/summary?date=${selectedDate}`, { headers }),
-        axios.get(`http://10.1.10.42:5000/api/supervisor/line-performance?date=${selectedDate}`, { headers }),
-        axios.get(`http://10.1.10.42:5000/api/supervisor/assignments?date=${selectedDate}`, { headers })
+        axios.get(`${API_BASE}/api/supervisor/summary?date=${selectedDate}`, { headers }),
+        axios.get(`${API_BASE}/api/supervisor/line-performance?date=${selectedDate}`, { headers }),
+        axios.get(`${API_BASE}/api/supervisor/assignments?date=${selectedDate}`, { headers })
       ]);
 
       if (summaryRes.data.success) {
         setSummary(summaryRes.data.summary);
       }
       if (lineRes.data.success) {
-        const lines = lineRes.data.lines;
-        setLineData(lines);
-        // Compute global real‑time target as sum of line real‑time targets
-        const sumRealtime = lines.reduce((acc, line) => acc + (line.realtimeTarget || 0), 0);
-        setGlobalRealtimeTarget(sumRealtime);
+        setLineData(lineRes.data.lines);
       }
       if (assignmentsRes.data.success) {
         setAssignments(assignmentsRes.data.assignments);
@@ -99,6 +184,8 @@ export default function Dashboard() {
     const newDate = e.target.value;
     setDate(newDate);
     fetchDashboardData(newDate);
+    setLineRunData({}); // clear previous details
+    setLineRealtimeTargets({});
   };
 
   const formatNumber = (value) => {
@@ -135,7 +222,7 @@ export default function Dashboard() {
       <NavDashboard />
 
       <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
-        {/* Header Section with Glassmorphism */}
+        {/* Header Section */}
         <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-6 mb-8 border border-white/50">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
@@ -173,7 +260,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Error message with animation */}
+        {/* Error message */}
         {error && (
           <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-6 py-4 rounded-xl mb-8 animate-slideDown flex items-center gap-3 shadow-md">
             <div>
@@ -231,7 +318,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* NEW: Global real‑time target card */}
+            {/* Global real‑time target card using client‑side computed value */}
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div>
@@ -253,7 +340,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Line Performance Chart (unchanged) */}
+        {/* Line Performance Chart – now uses client‑side computed real‑time targets */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-8 border border-gray-100">
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -281,7 +368,11 @@ export default function Dashboard() {
               <div className="min-w-[600px] sm:min-w-0 px-4 sm:px-0">
                 <ResponsiveContainer width="100%" height={isMobile ? 350 : 450}>
                   <ComposedChart
-                    data={lineData}
+                    data={lineData.map(line => ({
+                      lineNo: line.lineNo,
+                      totalSewed: line.totalSewed,
+                      realtimeTarget: lineRealtimeTargets[line.lineNo] || 0
+                    }))}
                     margin={{ top: 20, right: 30, left: 20, bottom: isMobile ? 70 : 40 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -363,7 +454,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Line Cards – now using real‑time target */}
+        {/* Line Cards – now using client‑side real‑time targets */}
         {!loading && lineData.length > 0 && (
           <div className="mt-8">
             <div className="flex items-center justify-between mb-6">
@@ -393,7 +484,7 @@ export default function Dashboard() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {lineData.map((line, idx) => {
-                const realtimeTarget = line.realtimeTarget || 0;
+                const realtimeTarget = lineRealtimeTargets[line.lineNo] || 0;
                 const sewed = line.totalSewed || 0;
                 const variance = sewed - realtimeTarget;
                 const variancePct = realtimeTarget > 0 ? (variance / realtimeTarget) * 100 : 0;
