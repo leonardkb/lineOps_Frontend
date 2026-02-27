@@ -757,7 +757,7 @@ export default function LineLeaderPage() {
         }
       }
 
-      const res = await fetch(`http://l0.1.10.42:5000/api/lineleader/update-sewed/${runId}`, {
+      const res = await fetch(`http://10.1.10.42:5000/api/lineleader/update-sewed/${runId}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
