@@ -48,7 +48,7 @@ export default function HeaderForm({ value, onChange, slots, onSaveSuccess }) {
         targetPerHour: targetPerHour,
         slots: slotsData,
       };
-      const token = localStorage.getItem("authToken");
+      const token = localStorage.getItem("token");
       const response = await fetch("http://10.1.10.42:5000/api/save-production", {
         method: "POST",
         headers: { 
