@@ -23,11 +23,13 @@ function AlarmNotification({ visible, onDismiss, onSnooze, lastSavedTime }) {
       <div className="rounded-2xl border border-red-200 bg-red-50 p-4 shadow-lg max-w-sm">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
+            <div className="flex h-10 w-10 items-center justify-center 
+            rounded-full bg-red-100">
               <span className="text-lg">⏰</span>
             </div>
             <div>
-              <div className="text-sm font-semibold text-red-800">¡Hora de actualizar datos!</div>
+              <div className="text-sm font-semibold text-red-800">
+                ¡Hora de actualizar datos!</div>
               <div className="mt-1 text-xs text-red-600">
                 Por favor actualiza tu producción por hora.
                 {lastSavedTime && (
@@ -120,17 +122,18 @@ function HourlyPlanCard({
           </div>
         </div>
 
-        <div className="rounded-2xl border bg-white px-4 py-3 text-center">
-          <div className="text-xs text-gray-500">Total cosido</div>
-          <div className="text-lg font-semibold text-gray-900">{totalSewed}</div>
-        </div>
+        
       </div>
 
       <div className="mt-4 border-t pt-4 overflow-x-auto">
         <table className="min-w-[620px] w-full border-separate border-spacing-0">
           <thead>
             <tr>
-              <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left text-xs font-semibold text-gray-700 border-y border-gray-200 border-r border-gray-200 rounded-tl-xl after:absolute after:top-0 after:right-0 after:h-full after:w-px after:bg-gray-200">
+              <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 
+              text-left text-xs font-semibold text-gray-700 border-y 
+              border-gray-200 border-r border-gray-200 rounded-tl-xl 
+              after:absolute after:top-0 after:right-0 after:h-full 
+              after:w-px after:bg-gray-200">
                 Fila
               </th>
               {slots.map((s, i) => (
@@ -149,8 +152,6 @@ function HourlyPlanCard({
           </thead>
 
           <tbody>
-            
-
             <HourlyRow
               label="Objetivo del bloque"
               slots={slots}
@@ -269,7 +270,7 @@ export default function LineLeaderPage() {
   const [runData, setRunData] = useState(null);
   const [sewedInputs, setSewedInputs] = useState({});
 
-  // NEW: State for line balancing assignments
+  // State for line balancing assignments
   const [assignments, setAssignments] = useState([]);
 
   // Filters
@@ -278,6 +279,14 @@ export default function LineLeaderPage() {
 
   const [openOperatorIds, setOpenOperatorIds] = useState({});
   const [applyOpByOperatorId, setApplyOpByOperatorId] = useState({});
+
+  // ========== NEW: Summary Banner States ==========
+  const [realTimeTarget, setRealTimeTarget] = useState(0);
+  const [realTimeProgress, setRealTimeProgress] = useState(0);
+  const [overallEfficiency, setOverallEfficiency] = useState(0);
+  const [targetAchievement, setTargetAchievement] = useState(0);
+  const [realTimeEfficiency, setRealTimeEfficiency] = useState(0);
+  // ================================================
 
   const user = useMemo(() => {
     try {
@@ -434,7 +443,6 @@ export default function LineLeaderPage() {
 
       if (json?.run?.id) {
         await fetchRunData(json.run.id);
-        // NEW: Fetch assignments after run data is loaded
         await fetchAssignments(json.run.id);
       } else {
         setErrMsg("Se encontró la última corrida pero falta el ID de la corrida.");
@@ -501,7 +509,7 @@ export default function LineLeaderPage() {
     }
   }
 
-  // NEW: Fetch assignments for the current run
+  // Fetch assignments for the current run
   async function fetchAssignments(runId) {
     const token = getToken();
     if (!token) return;
@@ -580,7 +588,6 @@ export default function LineLeaderPage() {
   }, [runData, operatorFilter, search]);
 
   // ========== SYNCHRONIZATION LOGIC ==========
-  // Map operationId -> operatorId
   const operationToOperatorMap = useMemo(() => {
     const map = new Map();
     if (runData?.operations) {
@@ -594,7 +601,6 @@ export default function LineLeaderPage() {
     return map;
   }, [runData]);
 
-  // Map operatorId -> array of operationIds
   const operatorToOperationIds = useMemo(() => {
     const map = new Map();
     if (runData?.operations) {
@@ -609,11 +615,9 @@ export default function LineLeaderPage() {
     return map;
   }, [runData]);
 
-  // Synchronized update function
   const handleSewedChange = useCallback((opId, slotLabel, value) => {
     setSewedInputs(prev => {
       const operatorId = operationToOperatorMap.get(opId);
-      // No operator → update only this operation
       if (!operatorId) {
         return {
           ...prev,
@@ -636,7 +640,6 @@ export default function LineLeaderPage() {
     });
   }, [operationToOperatorMap, operatorToOperationIds]);
 
-  // Optional: Normalize initial data so all operations of an operator share the same values
   useEffect(() => {
     if (!runData || !operatorToOperationIds.size) return;
 
@@ -647,7 +650,6 @@ export default function LineLeaderPage() {
         if (opIds.length <= 1) continue;
         const firstOpId = opIds[0];
         const firstOpData = prev[firstOpId] || {};
-        // Make all other operations match the first one
         opIds.slice(1).forEach(id => {
           if (JSON.stringify(prev[id]) !== JSON.stringify(firstOpData)) {
             newState[id] = { ...firstOpData };
@@ -658,8 +660,6 @@ export default function LineLeaderPage() {
       return changed ? newState : prev;
     });
   }, [runData, operatorToOperationIds]);
-
-  // ============================================
 
   function resetFilters() {
     setSearch("");
@@ -673,20 +673,18 @@ export default function LineLeaderPage() {
     }));
   }
 
-  // ========== CORRECTED GLOBAL TOTAL ==========
-  const totalSewed = useMemo(() => {
-    const operatorSeen = new Set();   // operator IDs already counted
+  // ========== TOTAL FOR ALL OPERATIONS (used in operations tab) ==========
+  const allOperationsTotal = useMemo(() => {
+    const operatorSeen = new Set();
     let total = 0;
 
     for (const [opId, opData] of Object.entries(sewedInputs)) {
       const operatorId = operationToOperatorMap.get(opId);
       if (!operatorId) {
-        // Unassigned operation: count it directly
         for (const slotLabel of Object.keys(opData)) {
           total += safeNum(opData[slotLabel]);
         }
       } else {
-        // Assigned operator: count only the first operation we encounter for this operator
         if (!operatorSeen.has(operatorId)) {
           operatorSeen.add(operatorId);
           for (const slotLabel of Object.keys(opData)) {
@@ -697,6 +695,25 @@ export default function LineLeaderPage() {
     }
     return total;
   }, [sewedInputs, operationToOperatorMap]);
+
+  // ========== FINISHED GARMENTS TOTAL (packing / empaque) ==========
+  const finishedGarmentsTotal = useMemo(() => {
+    if (!runData) return 0;
+    let total = 0;
+    const packingKeywords = ['pack', 'emp'];
+    for (const block of runData.operations || []) {
+      for (const op of block.operations || []) {
+        const opName = (op.operation_name || '').toLowerCase();
+        if (packingKeywords.some(keyword => opName.includes(keyword))) {
+          const sewedData = op.sewed_data || {};
+          for (const qty of Object.values(sewedData)) {
+            total += safeNum(qty);
+          }
+        }
+      }
+    }
+    return total;
+  }, [runData]);
 
   const getSelectedOperationData = useMemo(() => {
     return (block) => {
@@ -777,7 +794,6 @@ export default function LineLeaderPage() {
 
       setSaveMsg("✅ Actualizaciones por hora guardadas");
       await fetchRunData(runId);
-      // Optionally refresh assignments after save
       await fetchAssignments(runId);
     } catch (e) {
       setErrMsg(e.message || "Error de red al guardar");
@@ -785,6 +801,87 @@ export default function LineLeaderPage() {
       setSaving(false);
     }
   }
+
+  // ========== Real‑time target calculation ==========
+  useEffect(() => {
+    if (!runData || !slots.length || !slotTargetsMap || !target) return;
+
+    const calculateRealtime = () => {
+      const now = new Date();
+      const dateStr = header.date ? header.date.split('T')[0] : new Date().toISOString().split('T')[0];
+
+      const slotsWithTime = slots
+        .map(slot => {
+          if (!slot.slot_start || !slot.slot_end) return null;
+          const start = new Date(`${dateStr}T${slot.slot_start}`);
+          const end = new Date(`${dateStr}T${slot.slot_end}`);
+          return { ...slot, start, end };
+        })
+        .filter(s => s !== null);
+
+      let cumulative = 0;
+      for (const slot of slotsWithTime) {
+        const slotTarget = slotTargetsMap[slot.slot_label]?.slot_target || 0;
+        if (now >= slot.end) {
+          cumulative += Number(slotTarget);
+        } else if (now >= slot.start && now < slot.end) {
+          const elapsed = (now - slot.start) / (slot.end - slot.start);
+          cumulative += Number(slotTarget) * elapsed;
+          break;
+        } else {
+          break;
+        }
+      }
+      setRealTimeTarget(Math.round(cumulative * 100) / 100);
+      setRealTimeProgress(target > 0 ? (cumulative / target) * 100 : 0);
+    };
+
+    calculateRealtime();
+    const interval = setInterval(calculateRealtime, 60000);
+    return () => clearInterval(interval);
+  }, [runData, slots, slotTargetsMap, target, header.date]);
+
+  // ========== Compute efficiency, achievement, real‑time efficiency using finished garments ==========
+  useEffect(() => {
+    if (!runData || target === 0 || finishedGarmentsTotal === undefined) return;
+
+    const operatorsCount = Number(header.operators) || 0;
+    const workingHours = Number(header.workingHours) || 0;
+    const sam = Number(header.sam) || 0;
+
+    const availableMinutes = operatorsCount * workingHours * 60;
+    const totalSAMOutput = finishedGarmentsTotal * sam;
+    const eff = availableMinutes > 0 ? (totalSAMOutput / availableMinutes) * 100 : 0;
+    setOverallEfficiency(Math.round(eff * 100) / 100);
+
+    const ach = target > 0 ? (finishedGarmentsTotal / target) * 100 : 0;
+    setTargetAchievement(Math.round(ach * 100) / 100);
+
+    const rtEff = realTimeTarget > 0 ? (finishedGarmentsTotal / realTimeTarget) * 100 : 0;
+    setRealTimeEfficiency(Math.round(rtEff * 100) / 100);
+  }, [runData, target, finishedGarmentsTotal, header.operators, header.workingHours, header.sam, realTimeTarget]);
+
+  // ========== Helper for status dots ==========
+  const getStatusDot = (value, type) => {
+    if (value === undefined || value === null) return 'bg-gray-400';
+    if (type === 'efficiency') {
+      if (value < 60) return 'bg-red-500';
+      if (value < 80) return 'bg-yellow-500';
+      return 'bg-green-500';
+    }
+    if (type === 'cumplimiento') {
+      if (value < 70) return 'bg-red-500';
+      if (value < 90) return 'bg-yellow-500';
+      return 'bg-green-500';
+    }
+    if (type === 'realtimeEfficiency') {
+      if (value < 60) return 'bg-red-500';
+      if (value < 80) return 'bg-yellow-500';
+      return 'bg-green-500';
+    }
+    return 'bg-gray-400';
+  };
+  // ============================================
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -816,7 +913,7 @@ export default function LineLeaderPage() {
               <div className="mt-1 text-sm text-gray-700">
                 Eficiencia: {Math.round(safeNum(header.efficiency) * 100)}%
               </div>
-              <div className="mt-1 text-sm text-gray-700">Total cosido: {totalSewed}</div>
+              <div className="mt-1 text-sm text-gray-700">Total cosido: {finishedGarmentsTotal}</div>
 
               <div className="mt-2">
                 <AlarmStatusIndicator
@@ -861,8 +958,7 @@ export default function LineLeaderPage() {
         </div>
 
         {saveMsg ? (
-          <div className="mt-4 rounded-2xl border border-green-200 
-          bg-green-50 p-3 text-sm text-green-800">
+          <div className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-3 text-sm text-green-800">
             {saveMsg}
           </div>
         ) : null}
@@ -876,8 +972,88 @@ export default function LineLeaderPage() {
             </div>
           ) : tab === "summary" ? (
             <>
+              {/* ========== Summary Cards Banner (only in Resumen tab) ========== */}
+              {runData && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-5 mb-6">
+                  {/* Objetivo Total */}
+                  <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+                    <p className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-1">Objetivo Total</p>
+                    <p className="text-3xl font-bold text-gray-900">{Math.round(target).toLocaleString()}</p>
+                    <p className="text-xs text-gray-500 mt-2">piezas</p>
+                  </div>
+
+                  {/* Total Cosido (finished garments) */}
+                  <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+                    <p className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-1">Total Cosido</p>
+                    <p className="text-3xl font-bold text-gray-900">{Math.round(finishedGarmentsTotal).toLocaleString()}</p>
+                    <p className="text-xs text-gray-500 mt-2">piezas terminadas</p>
+                  </div>
+
+                  {/* Eficiencia con indicador */}
+                  <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`w-3 h-3 rounded-full ${getStatusDot(overallEfficiency, 'efficiency')}`}></span>
+                      <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">Eficiencia</p>
+                    </div>
+                    <p className="text-3xl font-bold text-gray-900">{overallEfficiency.toFixed(1)}%</p>
+                    <p className="text-xs text-gray-500 mt-2">basada en SAM</p>
+                  </div>
+
+                  {/* Cumplimiento con indicador */}
+                  <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`w-3 h-3 rounded-full ${getStatusDot(targetAchievement, 'cumplimiento')}`}></span>
+                      <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">Cumplimiento</p>
+                    </div>
+                    <p className="text-3xl font-bold text-gray-900">{targetAchievement.toFixed(1)}%</p>
+                    <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
+                      <div
+                        className="bg-gray-900 h-1.5 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(targetAchievement, 100)}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  {/* Meta en tiempo real */}
+                  <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+                    <p className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-1">Meta en tiempo real</p>
+                    <p className="text-3xl font-bold text-gray-900">
+                      {realTimeTarget.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-2">piezas esperadas hasta ahora</p>
+                    <div className="w-full bg-gray-200 rounded-full h-1.5 mt-3">
+                      <div
+                        className="bg-blue-600 h-1.5 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(realTimeProgress, 100)}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">{realTimeProgress.toFixed(1)}% del objetivo</p>
+                  </div>
+
+                  {/* Real‑time Efficiency con indicador */}
+                  <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`w-3 h-3 rounded-full ${getStatusDot(realTimeEfficiency, 'realtimeEfficiency')}`}></span>
+                      <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">Real‑time Efficiency</p>
+                    </div>
+                    <p className="text-3xl font-bold text-gray-900">{realTimeEfficiency.toFixed(1)}%</p>
+                    <p className="text-xs text-gray-500 mt-2">de la meta en tiempo real</p>
+                    <div className="w-full bg-gray-200 rounded-full h-1.5 mt-3">
+                      <div
+                        className="bg-purple-600 h-1.5 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(realTimeEfficiency, 100)}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {Math.round(finishedGarmentsTotal).toLocaleString()} /{' '}
+                      {realTimeTarget.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} piezas
+                    </p>
+                  </div>
+                </div>
+              )}
+              {/* ============================================================== */}
+
               <MetaSummary header={header} target={target} slots={slotsForSummary} />
-              {/* NEW: Display assignments if any */}
               {assignments.length > 0 && (
                 <div className="mt-6 rounded-3xl border bg-white shadow-sm p-6">
                   <h2 className="text-lg font-semibold mb-4">Asignaciones de ayuda</h2>
@@ -976,7 +1152,6 @@ export default function LineLeaderPage() {
                     const selectedOperationSewedData = getOperationSewedData(selectedOperationId);
                     const selectedOperationTotal = getOperationTotal(selectedOperationId);
 
-                    // Operator total = total of first operation (all are the same)
                     const operatorTotal = block.operations?.length
                       ? getOperationTotal(block.operations[0].id)
                       : 0;
@@ -1113,11 +1288,8 @@ export default function LineLeaderPage() {
                   })}
                 </div>
 
-                {/* Bottom action bar: total, dismiss alarm, and save button */}
                 <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t pt-6">
-                  <div className="text-sm text-gray-700">
-                    Total sewed: <span className="font-semibold">{totalSewed}</span>
-                  </div>
+                  
 
                   <div className="flex gap-2">
                     {alarmVisible && (
