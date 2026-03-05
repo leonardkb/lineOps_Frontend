@@ -423,7 +423,7 @@ export default function LineLeaderPage() {
 
     try {
       const res = await fetch(
-        `http://10.1.10.42:5000/api/lineleader/latest-run?line=${encodeURIComponent(lineNo)}`,
+        `/api/lineleader/latest-run?line=${encodeURIComponent(lineNo)}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -462,7 +462,7 @@ export default function LineLeaderPage() {
     }
 
     try {
-      const res = await fetch(`http://10.1.10.42:5000/api/get-run-data/${runId}`, {
+      const res = await fetch(`/api/get-run-data/${runId}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -515,7 +515,7 @@ export default function LineLeaderPage() {
     if (!token) return;
 
     try {
-      const res = await fetch(`http://10.1.10.42:5000/api/lineleader/assignments/${runId}`, {
+      const res = await fetch(`/api/lineleader/assignments/${runId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json();
@@ -774,7 +774,7 @@ export default function LineLeaderPage() {
         }
       }
 
-      const res = await fetch(`http://10.1.10.42:5000/api/lineleader/update-sewed/${runId}`, {
+      const res = await fetch(`/api/lineleader/update-sewed/${runId}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -958,7 +958,8 @@ export default function LineLeaderPage() {
         </div>
 
         {saveMsg ? (
-          <div className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+          <div className="mt-4 rounded-2xl border border-green-200
+           bg-green-50 p-3 text-sm text-green-800">
             {saveMsg}
           </div>
         ) : null}

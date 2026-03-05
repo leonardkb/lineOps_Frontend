@@ -39,7 +39,7 @@ export default function LineBalancing() {
 
   async function fetchRuns() {
   try {
-    const res = await fetch("http://10.1.10.42:5000/api/line-runs", {
+    const res = await fetch("/api/line-runs", {
       headers: {
         Authorization: `Bearer ${token}`
       }
@@ -66,7 +66,7 @@ export default function LineBalancing() {
     setRunData(null);
     setAssignments([]);
     try {
-      const res = await fetch(`http://10.1.10.42:5000/api/engineer/line-balancing/${runId}`, {
+      const res = await fetch(`/api/engineer/line-balancing/${runId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.status === 401) {
@@ -89,7 +89,7 @@ export default function LineBalancing() {
 
   async function fetchAssignments(runId) {
     try {
-      const res = await fetch(`http://10.1.10.42:5000/api/lineleader/assignments/${runId}`, {
+      const res = await fetch(`/api/lineleader/assignments/${runId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json();
@@ -190,7 +190,7 @@ export default function LineBalancing() {
         })),
       };
       const res = await fetch(
-        `http://10.1.10.42:5000/api/engineer/line-balancing/${selectedRunId}/assign`,
+        `/api/engineer/line-balancing/${selectedRunId}/assign`,
         {
           method: "POST",
           headers: {

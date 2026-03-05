@@ -8,7 +8,7 @@ export default function NavAdmin({ user, onLogout }) {
   const [alertCount, setAlertCount] = useState(0);
   const navigate = useNavigate();
 
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://10.1.10.42:5000";
+   {/*const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://10.1.10.42:5000";*/}
 
   // Fetch alert count
   const fetchAlertCount = async () => {
@@ -16,7 +16,7 @@ export default function NavAdmin({ user, onLogout }) {
       const token = localStorage.getItem("token");
       if (!token) return;
 
-      const response = await fetch(`${API_BASE}/api/supervisor/alert-count`, {
+      const response = await fetch(`/api/supervisor/alert-count`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -72,12 +72,15 @@ export default function NavAdmin({ user, onLogout }) {
           <div className="relative">
             <button
               onClick={() => setShowAlerts(!showAlerts)}
-              className="relative px-4 py-2 text-sm font-medium bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2"
+              className="relative px-4 py-2 text-sm font-medium bg-gray-800 
+              text-white rounded-lg hover:bg-gray-700 transition-colors 
+              flex items-center gap-2"
             >
               <span>Alertas</span>
 
               {alertCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white
+                 text-xs rounded-full h-5 w-5 flex items-center justify-center">
                   {alertCount > 99 ? "99+" : alertCount}
                 </span>
               )}
@@ -96,14 +99,16 @@ export default function NavAdmin({ user, onLogout }) {
           <div className="flex items-center gap-3">
             <button
               onClick={() => navigate("/admin")}
-              className="px-4 py-2 text-sm font-medium bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              className="px-4 py-2 text-sm font-medium bg-gray-800 text-white
+               rounded-lg hover:bg-gray-700 transition-colors"
             >
               Ir al panel
             </button>
 
             <button
               onClick={handleLogout}
-              className="px-4 py-2 text-sm font-medium border border-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              className="px-4 py-2 text-sm font-medium border border-gray-600 
+              text-white rounded-lg hover:bg-gray-700 transition-colors"
             >
               Cerrar sesión
             </button>
@@ -147,12 +152,15 @@ export default function NavAdmin({ user, onLogout }) {
                 setShowAlerts(!showAlerts);
                 setOpen(false);
               }}
-              className="w-full text-left px-4 py-3 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors flex justify-between items-center"
+              className="w-full text-left px-4 py-3 bg-gray-700 text-white 
+              rounded-lg hover:bg-gray-600 transition-colors flex justify-between
+               items-center"
             >
               <span>Alertas</span>
 
               {alertCount > 0 && (
-                <span className="bg-red-500 text-white text-xs rounded-full h-6 w-6 flex items-center justify-center">
+                <span className="bg-red-500 text-white text-xs rounded-full h-6 w-6
+                 flex items-center justify-center">
                   {alertCount}
                 </span>
               )}
@@ -164,7 +172,8 @@ export default function NavAdmin({ user, onLogout }) {
                 navigate("/admin");
                 setOpen(false);
               }}
-              className="w-full text-left px-4 py-3 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+              className="w-full text-left px-4 py-3 bg-gray-700 text-white 
+              rounded-lg hover:bg-gray-600 transition-colors"
             >
               Ir al panel
             </button>
@@ -174,7 +183,8 @@ export default function NavAdmin({ user, onLogout }) {
                 handleLogout();
                 setOpen(false);
               }}
-              className="w-full text-left px-4 py-3 border border-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              className="w-full text-left px-4 py-3 border border-gray-600 
+              text-white rounded-lg hover:bg-gray-700 transition-colors"
             >
               Cerrar sesión
             </button>
@@ -185,7 +195,8 @@ export default function NavAdmin({ user, onLogout }) {
       {/* Mobile Alerts Panel */}
       {showAlerts && (
         <div className="md:hidden fixed inset-0 bg-black bg-opacity-50 z-50">
-          <div className="absolute right-0 top-0 h-full w-96 bg-white shadow-xl overflow-y-auto">
+          <div className="absolute right-0 top-0 h-full w-96 bg-white shadow-xl 
+          overflow-y-auto">
             <div className="p-4">
               <div className="flex items-center justify-between mb-4">
 

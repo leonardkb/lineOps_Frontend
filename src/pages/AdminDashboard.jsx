@@ -4,7 +4,7 @@ import axios from "axios";
 import NavAdmin from "../components/NavAdmin";
 import Alert from "../components/Alert";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://10.1.10.42:5000";
+ {/*const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://10.1.10.42:5000";*/}
 
 function toYMD(d) {
   if (!d) return "";
@@ -304,7 +304,7 @@ export default function AdminDashboard() {
       const token = localStorage.getItem("token");
 
       const runsResponse = await axios.get(
-        `${API_BASE}/api/line-runs/${selectedLine}`,
+        `/api/line-runs/${selectedLine}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -327,7 +327,7 @@ export default function AdminDashboard() {
       }
 
       const runDetailResponse = await axios.get(
-        `${API_BASE}/api/get-run-data/${selectedRun.id}`,
+        `/api/get-run-data/${selectedRun.id}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -485,7 +485,8 @@ export default function AdminDashboard() {
               <select
                 value={selectedLine}
                 onChange={(e) => setSelectedLine(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-gray-900/20"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 
+                focus:outline-none focus:ring-2 focus:ring-gray-900/20"
               >
                 <option value="">Seleccionar Línea</option>
                 {lines.map((line) => (
@@ -505,7 +506,8 @@ export default function AdminDashboard() {
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-gray-900/20"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2
+                 focus:outline-none focus:ring-2 focus:ring-gray-900/20"
               />
 
               {selectedDate ? (
@@ -619,7 +621,8 @@ export default function AdminDashboard() {
                                   : "PRIORIDAD BAJA"}
                               </span>
                             </div>
-                            <div className="mt-3 text-xs text-gray-600 flex justify-between items-center">
+                            <div className="mt-3 text-xs text-gray-600 flex 
+                            justify-between items-center">
                               <span>
                                 Línea {alert.line} • {formatDate(alert.date)}
                               </span>

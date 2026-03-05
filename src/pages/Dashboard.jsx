@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import NavDashboard from '../components/NavDashboard';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://10.1.10.42:5000";
+ {/*const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://10.1.10.42:5000";*/}
 
 function toYMD(d) {
   if (!d) return "";
@@ -45,7 +45,7 @@ export default function Dashboard() {
       return;
     }
 
-    axios.get(`${API_BASE}/api/me`, {
+    axios.get(`/api/me`, {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => {
@@ -106,11 +106,11 @@ export default function Dashboard() {
       const newTargets = {};
       for (const line of lineData) {
         try {
-          const runsRes = await axios.get(`${API_BASE}/api/line-runs/${line.lineNo}`, { headers });
+          const runsRes = await axios.get(`/api/line-runs/${line.lineNo}`, { headers });
           if (!runsRes.data.success) continue;
           const run = runsRes.data.runs.find(r => toYMD(r.run_date) === date);
           if (!run) continue;
-          const detailRes = await axios.get(`${API_BASE}/api/get-run-data/${run.id}`, { headers });
+          const detailRes = await axios.get(`/api/get-run-data/${run.id}`, { headers });
           if (!detailRes.data.success) continue;
           newRunData[line.lineNo] = detailRes.data;
           const rt = computeRealtimeTarget(detailRes.data, date);
@@ -134,9 +134,9 @@ export default function Dashboard() {
     const headers = { Authorization: `Bearer ${token}` };
     try {
       const [summaryRes, lineRes, assignmentsRes] = await Promise.all([
-        axios.get(`${API_BASE}/api/supervisor/summary?date=${selectedDate}`, { headers }),
-        axios.get(`${API_BASE}/api/supervisor/line-performance?date=${selectedDate}`, { headers }),
-        axios.get(`${API_BASE}/api/supervisor/assignments?date=${selectedDate}`, { headers })
+        axios.get(`/api/supervisor/summary?date=${selectedDate}`, { headers }),
+        axios.get(`/api/supervisor/line-performance?date=${selectedDate}`, { headers }),
+        axios.get(`/api/supervisor/assignments?date=${selectedDate}`, { headers })
       ]);
       if (summaryRes.data.success) setSummary(summaryRes.data.summary);
       if (lineRes.data.success) setLineData(lineRes.data.lines);
