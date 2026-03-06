@@ -23,13 +23,11 @@ function AlarmNotification({ visible, onDismiss, onSnooze, lastSavedTime }) {
       <div className="rounded-2xl border border-red-200 bg-red-50 p-4 shadow-lg max-w-sm">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center 
-            rounded-full bg-red-100">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
               <span className="text-lg">⏰</span>
             </div>
             <div>
-              <div className="text-sm font-semibold text-red-800">
-                ¡Hora de actualizar datos!</div>
+              <div className="text-sm font-semibold text-red-800">¡Hora de actualizar datos!</div>
               <div className="mt-1 text-xs text-red-600">
                 Por favor actualiza tu producción por hora.
                 {lastSavedTime && (
@@ -129,11 +127,7 @@ function HourlyPlanCard({
         <table className="min-w-[620px] w-full border-separate border-spacing-0">
           <thead>
             <tr>
-              <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 
-              text-left text-xs font-semibold text-gray-700 border-y 
-              border-gray-200 border-r border-gray-200 rounded-tl-xl 
-              after:absolute after:top-0 after:right-0 after:h-full 
-              after:w-px after:bg-gray-200">
+              <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left text-xs font-semibold text-gray-700 border-y border-gray-200 border-r border-gray-200 rounded-tl-xl after:absolute after:top-0 after:right-0 after:h-full after:w-px after:bg-gray-200">
                 Fila
               </th>
               {slots.map((s, i) => (
@@ -273,12 +267,8 @@ export default function LineLeaderPage() {
   // State for line balancing assignments
   const [assignments, setAssignments] = useState([]);
 
-  // Filters
-  const [search, setSearch] = useState("");
-  const [operatorFilter, setOperatorFilter] = useState("all");
-
-  const [openOperatorIds, setOpenOperatorIds] = useState({});
-  const [applyOpByOperatorId, setApplyOpByOperatorId] = useState({});
+  // State for simplified operations view
+  const [selectedOperatorId, setSelectedOperatorId] = useState(null);
 
   // ========== NEW: Summary Banner States ==========
   const [realTimeTarget, setRealTimeTarget] = useState(0);
@@ -491,19 +481,10 @@ export default function LineLeaderPage() {
       }
       setSewedInputs(next);
 
-      const openInit = {};
-      const applyInit = {};
-      for (let i = 0; i < (json.operations || []).length; i++) {
-        const block = json.operations[i];
-        const operatorId = block.operator?.id;
-        const firstOpId = block.operations?.[0]?.id;
-        if (operatorId) {
-          if (i === 0) openInit[operatorId] = true;
-          if (firstOpId) applyInit[operatorId] = firstOpId;
-        }
+      // Auto-select first operator
+      if (json.operations?.length > 0 && json.operations[0].operator?.id) {
+        setSelectedOperatorId(json.operations[0].operator.id);
       }
-      setOpenOperatorIds((prev) => ({ ...openInit, ...prev }));
-      setApplyOpByOperatorId((prev) => ({ ...applyInit, ...prev }));
     } catch (e) {
       setErrMsg(e.message || "Error de red al cargar los detalles de la corrida");
     }
@@ -565,27 +546,6 @@ export default function LineLeaderPage() {
   }, [runData]);
 
   const operatorsList = useMemo(() => runData?.operators || [], [runData]);
-
-  const operationsBlocks = useMemo(() => {
-    const blocks = runData?.operations || [];
-
-    const filteredByOperator =
-      operatorFilter === "all"
-        ? blocks
-        : blocks.filter((b) => String(b.operator?.operator_no) === String(operatorFilter));
-
-    const q = search.trim().toLowerCase();
-    if (!q) return filteredByOperator;
-
-    return filteredByOperator
-      .map((b) => {
-        const ops = (b.operations || []).filter((op) =>
-          String(op.operation_name || "").toLowerCase().includes(q)
-        );
-        return { ...b, operations: ops };
-      })
-      .filter((b) => (b.operations || []).length > 0);
-  }, [runData, operatorFilter, search]);
 
   // ========== SYNCHRONIZATION LOGIC ==========
   const operationToOperatorMap = useMemo(() => {
@@ -661,19 +621,40 @@ export default function LineLeaderPage() {
     });
   }, [runData, operatorToOperationIds]);
 
-  function resetFilters() {
-    setSearch("");
-    setOperatorFilter("all");
-  }
+  // ========== Helper functions for simplified view ==========
+  const handleQuickInputChange = (operatorId, slotLabel, value) => {
+    if (!operatorId) return;
+    
+    const opIds = operatorToOperationIds.get(operatorId) || [];
+    if (opIds.length === 0) return;
+    
+    // Use the first operation as the primary one for data entry
+    const primaryOpId = opIds[0];
+    handleSewedChange(primaryOpId, slotLabel, value);
+  };
 
-  function toggleOperator(operatorId) {
-    setOpenOperatorIds((prev) => ({
-      ...prev,
-      [operatorId]: !prev[operatorId],
-    }));
-  }
+  const getOperatorQuickTotal = (operatorId) => {
+    const opIds = operatorToOperationIds.get(operatorId) || [];
+    if (opIds.length === 0) return 0;
+    
+    let total = 0;
+    opIds.forEach(opId => {
+      const data = sewedInputs[opId] || {};
+      Object.values(data).forEach(val => {
+        total += safeNum(val);
+      });
+    });
+    return total;
+  };
 
-  // ========== TOTAL FOR ALL OPERATIONS (used in operations tab) ==========
+  const selectedOperator = useMemo(() => {
+    if (!selectedOperatorId || !runData) return null;
+    return (runData.operations || []).find(
+      block => block.operator?.id === selectedOperatorId
+    );
+  }, [selectedOperatorId, runData]);
+
+  // ========== TOTAL FOR ALL OPERATIONS ==========
   const allOperationsTotal = useMemo(() => {
     const operatorSeen = new Set();
     let total = 0;
@@ -714,21 +695,6 @@ export default function LineLeaderPage() {
     }
     return total;
   }, [runData]);
-
-  const getSelectedOperationData = useMemo(() => {
-    return (block) => {
-      const applyOpId = applyOpByOperatorId[block.operator?.id];
-      if (!applyOpId) return null;
-      return block.operations?.find((op) => op.id === applyOpId) || null;
-    };
-  }, [applyOpByOperatorId]);
-
-  const getOperationSewedData = useMemo(() => {
-    return (opId) => {
-      if (!opId) return {};
-      return sewedInputs[opId] || {};
-    };
-  }, [sewedInputs]);
 
   const getOperationTotal = useMemo(() => {
     return (opId) => {
@@ -958,8 +924,7 @@ export default function LineLeaderPage() {
         </div>
 
         {saveMsg ? (
-          <div className="mt-4 rounded-2xl border border-green-200
-           bg-green-50 p-3 text-sm text-green-800">
+          <div className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-3 text-sm text-green-800">
             {saveMsg}
           </div>
         ) : null}
@@ -973,7 +938,7 @@ export default function LineLeaderPage() {
             </div>
           ) : tab === "summary" ? (
             <>
-              {/* ========== Summary Cards Banner (only in Resumen tab) ========== */}
+              {/* Summary Cards Banner */}
               {runData && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-5 mb-6">
                   {/* Objetivo Total */}
@@ -1052,7 +1017,6 @@ export default function LineLeaderPage() {
                   </div>
                 </div>
               )}
-              {/* ============================================================== */}
 
               <MetaSummary header={header} target={target} slots={slotsForSummary} />
               {assignments.length > 0 && (
@@ -1090,230 +1054,193 @@ export default function LineLeaderPage() {
               )}
             </>
           ) : (
-            <>
-              <div className="mt-4 rounded-3xl border bg-white shadow-sm p-6">
-                <div className="text-lg font-semibold text-gray-900">
-                  Operaciones y Seguimiento por Hora
-                </div>
-                <div className="mt-1 text-sm text-gray-600">
-                  Ver y actualizar cantidades cosidas por hora. Los cambios se guardan por separado.
-                </div>
+            // SIMPLIFIED OPERATIONS SECTION
+            <div className="space-y-4">
+              {/* Operator Selection Grid - Simple cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {operatorsList.map((op) => {
+                  const operatorId = op.id;
+                  const total = getOperatorQuickTotal(operatorId);
+                  const isSelected = selectedOperatorId === operatorId;
+                  
+                  return (
+                    <button
+                      key={op.id}
+                      onClick={() => setSelectedOperatorId(operatorId)}
+                      className={`
+                        rounded-2xl border p-4 text-left transition-all
+                        ${isSelected 
+                          ? 'bg-gray-900 text-white border-gray-900 shadow-lg' 
+                          : 'bg-white hover:border-gray-300 hover:shadow-md'
+                        }
+                      `}
+                    >
+                      <div className="font-semibold">Op. {op.operator_no}</div>
+                      <div className={`text-sm mt-1 ${isSelected ? 'text-gray-300' : 'text-gray-600'}`}>
+                        {op.operator_name || 'Sin nombre'}
+                      </div>
+                      <div className={`mt-3 text-lg font-bold ${isSelected ? 'text-white' : 'text-gray-900'}`}>
+                        {total}
+                      </div>
+                      <div className={`text-xs ${isSelected ? 'text-gray-400' : 'text-gray-500'}`}>
+                        piezas
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
 
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Buscar operaciones..."
-                    className="rounded-xl border px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
-                  />
-
-                  <select
-                    value={operatorFilter}
-                    onChange={(e) => setOperatorFilter(e.target.value)}
-                    className="rounded-xl border px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
-                  >
-                    <option value="all">Todos los operadores</option>
-                    {operatorsList.map((o) => (
-                      <option key={o.id} value={String(o.operator_no)}>
-                        Operador {o.operator_no}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    onClick={resetFilters}
-                    className="rounded-xl border bg-white px-4 py-3 text-sm font-semibold hover:bg-gray-50"
-                  >
-                    Reiniciar filtros
-                  </button>
-                </div>
-
-                {alarmVisible && (
-                  <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 p-4">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-orange-800">
-                      ⚡ RECORDATORIO: ¡Es hora de actualizar tus datos de producción!
+              {/* Selected Operator Data Entry Section */}
+              {selectedOperator && (
+                <div className="rounded-3xl border bg-white shadow-sm overflow-hidden">
+                  {/* Operator Header with Progress */}
+                  <div className="bg-gradient-to-r from-gray-50 to-white p-6 border-b">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-2xl font-bold text-gray-900">
+                          Operador {selectedOperator.operator?.operator_no}
+                        </div>
+                        <div className="text-gray-600 mt-1">
+                          {selectedOperator.operator?.operator_name || 'Sin nombre'}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm text-gray-600">Producción total</div>
+                        <div className="text-3xl font-bold text-gray-900">
+                          {getOperatorQuickTotal(selectedOperatorId)}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">piezas</div>
+                      </div>
                     </div>
-                    <div className="mt-1 text-xs text-orange-600">
-                      Por favor ingresa las cantidades cosidas más recientes y haz clic en "Save Hourly Updates"
+
+                    {/* Quick progress bar */}
+                    <div className="mt-4">
+                      <div className="flex justify-between text-xs text-gray-600 mb-1">
+                        <span>Progreso del día</span>
+                        <span>{Math.min(Math.round((getOperatorQuickTotal(selectedOperatorId) / (target / operatorsList.length)) * 100), 100)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-gray-900 h-2 rounded-full transition-all duration-300"
+                          style={{ 
+                            width: `${Math.min((getOperatorQuickTotal(selectedOperatorId) / (target / operatorsList.length)) * 100, 100)}%` 
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
-                )}
 
-                <div className="mt-6 space-y-4">
-                  {operationsBlocks.map((block) => {
-                    const operatorId = block.operator?.id;
-                    const operatorNo = block.operator?.operator_no;
-                    const operatorName = block.operator?.operator_name || "";
-                    const isOpen = !!openOperatorIds[operatorId];
+                  {/* Simple Hourly Input Grid */}
+                  <div className="p-6">
+                    <div className="mb-4">
+                      <h3 className="font-semibold text-gray-900">Ingresar producción por hora</h3>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Ingresa las piezas cosidas en cada bloque horario
+                      </p>
+                    </div>
 
-                    const selectedOperation = getSelectedOperationData(block);
-                    const selectedOperationId = selectedOperation?.id;
-                    const selectedOperationName = selectedOperation?.operation_name || "";
-
-                    const selectedOperationSewedData = getOperationSewedData(selectedOperationId);
-                    const selectedOperationTotal = getOperationTotal(selectedOperationId);
-
-                    const operatorTotal = block.operations?.length
-                      ? getOperationTotal(block.operations[0].id)
-                      : 0;
-
-                    return (
-                      <div
-                        key={operatorId}
-                        id={`operator-${operatorNo}`}
-                        className="rounded-3xl border bg-white shadow-sm"
-                      >
-                        <div className="p-5 flex items-start justify-between gap-4">
-                          <div>
-                            <div className="text-lg font-semibold text-gray-900">
-                              Operador {operatorNo}
-                            </div>
-                            <div className="text-sm text-gray-600">
-                              Nombre del operador:{" "}
-                              <span className="font-medium">{operatorName || "-"}</span>
-                            </div>
-                            <div className="mt-2 text-sm text-gray-700">
-                              Total piezas producidas:{" "}
-                              <span className="font-semibold">{operatorTotal}</span>
-                            </div>
-                            {selectedOperation && (
-                              <div className="mt-1 text-sm text-gray-700">
-                                (Operación seleccionada: {selectedOperationTotal})
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                      {slots.map((slot) => {
+                        const operatorId = selectedOperatorId;
+                        const opIds = operatorToOperationIds.get(operatorId) || [];
+                        const primaryOpId = opIds[0];
+                        const currentValue = primaryOpId 
+                          ? sewedInputs[primaryOpId]?.[slot.slot_label] || ''
+                          : '';
+                        
+                        return (
+                          <div key={slot.slot_label} className="space-y-1">
+                            <label className="text-xs font-medium text-gray-600 block">
+                              {slot.slot_label}
+                            </label>
+                            <input
+                              type="number"
+                              value={currentValue}
+                              onChange={(e) => handleQuickInputChange(
+                                operatorId, 
+                                slot.slot_label, 
+                                e.target.value
+                              )}
+                              placeholder="0"
+                              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-center
+                                       text-lg font-semibold outline-none focus:ring-2 
+                                       focus:ring-gray-900/10 focus:border-gray-400"
+                              min="0"
+                            />
+                            {slotTargetsMap[slot.slot_label] && (
+                              <div className="text-xs text-gray-500 text-center">
+                                Meta: {Math.round(slotTargetsMap[slot.slot_label].slot_target)}
                               </div>
                             )}
                           </div>
+                        );
+                      })}
+                    </div>
 
-                          <button
-                            type="button"
-                            onClick={() => toggleOperator(operatorId)}
-                            className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold hover:bg-gray-50"
-                          >
-                            {isOpen ? "Ocultar" : "Mostrar"}
-                          </button>
-                        </div>
-
-                        {isOpen ? (
-                          <div className="px-5 pb-5 space-y-4">
-                            <div className="rounded-2xl border bg-gray-50 p-4">
-                              <div className="text-sm font-semibold text-gray-900">
-                                Aplicar entrada cosida a la operación
+                    {/* Quick Summary of All Operations (Collapsible) */}
+                    <details className="mt-6">
+                      <summary className="text-sm font-medium text-gray-700 cursor-pointer hover:text-gray-900">
+                        Ver todas las operaciones de este operador
+                      </summary>
+                      <div className="mt-4 space-y-2 border-t pt-4">
+                        {(selectedOperator.operations || []).map((op) => {
+                          const opTotal = getOperationTotal(op.id);
+                          return (
+                            <div key={op.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
+                              <div>
+                                <div className="font-medium text-gray-900">{op.operation_name}</div>
+                                <div className="text-xs text-gray-600">Capacidad: {op.capacity_per_hour}/hr</div>
                               </div>
-                              <div className="mt-2">
-                                <select
-                                  value={selectedOperationId || ""}
-                                  onChange={(e) =>
-                                    setApplyOpByOperatorId((prev) => ({
-                                      ...prev,
-                                      [operatorId]: Number(e.target.value),
-                                    }))
-                                  }
-                                  className="w-full sm:w-[520px] rounded-xl border px-4 py-3 text-sm outline-none
-                                             focus:ring-2 focus:ring-gray-900/10 bg-white"
-                                >
-                                  {(block.operations || []).map((op) => (
-                                    <option key={op.id} value={op.id}>
-                                      {op.operation_name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="mt-2 text-xs text-gray-600">
-                                El plan por hora muestra solo la operación seleccionada.
-                              </div>
+                              <div className="text-lg font-bold text-gray-900">{opTotal}</div>
                             </div>
-
-                            {selectedOperation && (
-                              <HourlyPlanCard
-                                slots={slots}
-                                slotTargetsMap={slotTargetsMap}
-                                sewedBySlot={selectedOperationSewedData}
-                                onChangeSewed={(slotLabel, nextValue) => {
-                                  if (!selectedOperationId) return;
-                                  handleSewedChange(selectedOperationId, slotLabel, nextValue);
-                                }}
-                                operationName={selectedOperationName}
-                              />
-                            )}
-
-                            <div className="rounded-2xl border bg-gray-50 p-4">
-                              <div className="text-sm font-semibold text-gray-900 mb-3">
-                                Todas las operaciones de este operador
-                              </div>
-                              <div className="space-y-2">
-                                {(block.operations || []).map((op) => {
-                                  const opTotal = getOperationTotal(op.id);
-                                  const isSelected = op.id === selectedOperationId;
-
-                                  return (
-                                    <div
-                                      key={op.id}
-                                      className={`p-3 rounded-xl border ${
-                                        isSelected
-                                          ? "border-blue-500 bg-blue-50"
-                                          : "border-gray-200 bg-white"
-                                      }`}
-                                      onClick={() =>
-                                        setApplyOpByOperatorId((prev) => ({
-                                          ...prev,
-                                          [operatorId]: op.id,
-                                        }))
-                                      }
-                                    >
-                                      <div className="flex justify-between items-center">
-                                        <div>
-                                          <div className="font-medium text-gray-900">
-                                            {op.operation_name}
-                                            {isSelected && (
-                                              <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                                Seleccionado
-                                              </span>
-                                            )}
-                                          </div>
-                                          <div className="text-xs text-gray-600 mt-1">
-                                            Capacidad: {op.capacity_per_hour}/hr
-                                          </div>
-                                        </div>
-                                        <div className="text-sm font-semibold text-gray-900">
-                                          Total: {opTotal}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </div>
-                        ) : null}
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+                    </details>
+                  </div>
                 </div>
+              )}
 
-                <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t pt-6">
-                  
-
-                  <div className="flex gap-2">
+              {/* Global Save Button - Always visible */}
+              <div className="sticky bottom-4 bg-white rounded-2xl border shadow-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
                     {alarmVisible && (
                       <button
                         onClick={handleDismissAlarm}
                         className="rounded-xl bg-red-100 text-red-700 px-4 py-2 text-sm font-semibold hover:bg-red-200"
                       >
-                        ⏰ Dismiss alarm
+                        ⏰ Cerrar alarma
                       </button>
                     )}
-
-                    <button
-                      onClick={handleSave}
-                      disabled={saving || !runData}
-                      className="rounded-xl bg-green-600 text-white px-6 py-3 text-sm font-semibold
-                                 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {saving ? "Saving..." : "💾 Save Hourly Updates"}
-                    </button>
+                    <div className="text-sm text-gray-600">
+                      {lastSavedTime && (
+                        <>Último guardado: {new Date(lastSavedTime).toLocaleTimeString()}</>
+                      )}
+                    </div>
                   </div>
+                  <button
+                    onClick={handleSave}
+                    disabled={saving || !runData}
+                    className="rounded-xl bg-green-600 text-white px-8 py-3 text-base font-semibold
+                             hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed
+                             shadow-lg hover:shadow-xl transition-all"
+                  >
+                    {saving ? (
+                      <span className="flex items-center gap-2">
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        Guardando...
+                      </span>
+                    ) : (
+                      '💾 Guardar producción'
+                    )}
+                  </button>
                 </div>
               </div>
-            </>
+            </div>
           )}
         </div>
       </div>
