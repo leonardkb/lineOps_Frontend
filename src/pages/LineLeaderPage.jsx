@@ -267,8 +267,8 @@ export default function LineLeaderPage() {
   // State for line balancing assignments
   const [assignments, setAssignments] = useState([]);
 
-  // State for simplified operations view
-  const [selectedOperatorId, setSelectedOperatorId] = useState(null);
+  // New state for time-based view
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState(null);
 
   // ========== NEW: Summary Banner States ==========
   const [realTimeTarget, setRealTimeTarget] = useState(0);
@@ -481,9 +481,9 @@ export default function LineLeaderPage() {
       }
       setSewedInputs(next);
 
-      // Auto-select first operator
-      if (json.operations?.length > 0 && json.operations[0].operator?.id) {
-        setSelectedOperatorId(json.operations[0].operator.id);
+      // Auto-select first time slot
+      if (json.slots?.length > 0) {
+        setSelectedTimeSlot(json.slots[0].slot_label);
       }
     } catch (e) {
       setErrMsg(e.message || "Error de red al cargar los detalles de la corrida");
@@ -621,9 +621,9 @@ export default function LineLeaderPage() {
     });
   }, [runData, operatorToOperationIds]);
 
-  // ========== Helper functions for simplified view ==========
-  const handleQuickInputChange = (operatorId, slotLabel, value) => {
-    if (!operatorId) return;
+  // ========== Helper functions for time-based view ==========
+  const handleTimeSlotChange = (operatorId, slotLabel, value) => {
+    if (!operatorId || !slotLabel) return;
     
     const opIds = operatorToOperationIds.get(operatorId) || [];
     if (opIds.length === 0) return;
@@ -633,26 +633,13 @@ export default function LineLeaderPage() {
     handleSewedChange(primaryOpId, slotLabel, value);
   };
 
-  const getOperatorQuickTotal = (operatorId) => {
+  const getOperatorValueForSlot = (operatorId, slotLabel) => {
     const opIds = operatorToOperationIds.get(operatorId) || [];
-    if (opIds.length === 0) return 0;
+    if (opIds.length === 0) return '';
     
-    let total = 0;
-    opIds.forEach(opId => {
-      const data = sewedInputs[opId] || {};
-      Object.values(data).forEach(val => {
-        total += safeNum(val);
-      });
-    });
-    return total;
+    const primaryOpId = opIds[0];
+    return sewedInputs[primaryOpId]?.[slotLabel] || '';
   };
-
-  const selectedOperator = useMemo(() => {
-    if (!selectedOperatorId || !runData) return null;
-    return (runData.operations || []).find(
-      block => block.operator?.id === selectedOperatorId
-    );
-  }, [selectedOperatorId, runData]);
 
   // ========== TOTAL FOR ALL OPERATIONS ==========
   const allOperationsTotal = useMemo(() => {
@@ -1054,144 +1041,103 @@ export default function LineLeaderPage() {
               )}
             </>
           ) : (
-            // SIMPLIFIED OPERATIONS SECTION
+            // SIMPLIFIED TIME-BASED OPERATIONS SECTION
             <div className="space-y-4">
-              {/* Operator Selection Grid - Simple cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {operatorsList.map((op) => {
-                  const operatorId = op.id;
-                  const total = getOperatorQuickTotal(operatorId);
-                  const isSelected = selectedOperatorId === operatorId;
+              {/* Time Slot Selection Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                {slots.map((slot) => {
+                  const isSelected = selectedTimeSlot === slot.slot_label;
+                  const slotTarget = slotTargetsMap[slot.slot_label]?.slot_target || 0;
                   
                   return (
                     <button
-                      key={op.id}
-                      onClick={() => setSelectedOperatorId(operatorId)}
+                      key={slot.slot_label}
+                      onClick={() => setSelectedTimeSlot(slot.slot_label)}
                       className={`
-                        rounded-2xl border p-4 text-left transition-all
+                        rounded-2xl border p-4 text-center transition-all
                         ${isSelected 
-                          ? 'bg-gray-900 text-white border-gray-900 shadow-lg' 
+                          ? 'bg-gray-900 text-white border-gray-900 shadow-lg ring-2 ring-gray-900 ring-offset-2' 
                           : 'bg-white hover:border-gray-300 hover:shadow-md'
                         }
                       `}
                     >
-                      <div className="font-semibold">Op. {op.operator_no}</div>
-                      <div className={`text-sm mt-1 ${isSelected ? 'text-gray-300' : 'text-gray-600'}`}>
-                        {op.operator_name || 'Sin nombre'}
-                      </div>
-                      <div className={`mt-3 text-lg font-bold ${isSelected ? 'text-white' : 'text-gray-900'}`}>
-                        {total}
-                      </div>
-                      <div className={`text-xs ${isSelected ? 'text-gray-400' : 'text-gray-500'}`}>
-                        piezas
+                      <div className="font-bold text-xl">{slot.slot_label}</div>
+                      <div className={`text-xs mt-1 ${isSelected ? 'text-gray-300' : 'text-gray-500'}`}>
+                        Meta: {Math.round(slotTarget)}
                       </div>
                     </button>
                   );
                 })}
               </div>
 
-              {/* Selected Operator Data Entry Section */}
-              {selectedOperator && (
+              {/* Selected Time Slot Data Entry Section - Clean like the image */}
+              {selectedTimeSlot && (
                 <div className="rounded-3xl border bg-white shadow-sm overflow-hidden">
-                  {/* Operator Header with Progress */}
-                  <div className="bg-gradient-to-r from-gray-50 to-white p-6 border-b">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-2xl font-bold text-gray-900">
-                          Operador {selectedOperator.operator?.operator_no}
-                        </div>
-                        <div className="text-gray-600 mt-1">
-                          {selectedOperator.operator?.operator_name || 'Sin nombre'}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm text-gray-600">Producción total</div>
-                        <div className="text-3xl font-bold text-gray-900">
-                          {getOperatorQuickTotal(selectedOperatorId)}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">piezas</div>
-                      </div>
-                    </div>
-
-                    {/* Quick progress bar */}
-                    <div className="mt-4">
-                      <div className="flex justify-between text-xs text-gray-600 mb-1">
-                        <span>Progreso del día</span>
-                        <span>{Math.min(Math.round((getOperatorQuickTotal(selectedOperatorId) / (target / operatorsList.length)) * 100), 100)}%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div 
-                          className="bg-gray-900 h-2 rounded-full transition-all duration-300"
-                          style={{ 
-                            width: `${Math.min((getOperatorQuickTotal(selectedOperatorId) / (target / operatorsList.length)) * 100, 100)}%` 
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Simple Hourly Input Grid */}
                   <div className="p-6">
-                    <div className="mb-4">
-                      <h3 className="font-semibold text-gray-900">Ingresar producción por hora</h3>
+                    <div className="mb-6">
+                      <h3 className="text-lg font-semibold text-gray-900">
+                        Ingresar producción por hora
+                      </h3>
                       <p className="text-sm text-gray-600 mt-1">
                         Ingresa las piezas cosidas en cada bloque horario
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                      {slots.map((slot) => {
-                        const operatorId = selectedOperatorId;
-                        const opIds = operatorToOperationIds.get(operatorId) || [];
-                        const primaryOpId = opIds[0];
-                        const currentValue = primaryOpId 
-                          ? sewedInputs[primaryOpId]?.[slot.slot_label] || ''
-                          : '';
+                    {/* Clean operator input grid - exactly like the image */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                      {operatorsList.map((op) => {
+                        const operatorId = op.id;
+                        const currentValue = getOperatorValueForSlot(operatorId, selectedTimeSlot);
                         
                         return (
-                          <div key={slot.slot_label} className="space-y-1">
-                            <label className="text-xs font-medium text-gray-600 block">
-                              {slot.slot_label}
-                            </label>
+                          <div key={op.id} className="flex flex-col items-center">
+                            <div className="text-xl font-semibold text-gray-900 mb-2">
+                              {op.operator_no}
+                            </div>
                             <input
                               type="number"
                               value={currentValue}
-                              onChange={(e) => handleQuickInputChange(
-                                operatorId, 
-                                slot.slot_label, 
+                              onChange={(e) => handleTimeSlotChange(
+                                operatorId,
+                                selectedTimeSlot,
                                 e.target.value
                               )}
                               placeholder="0"
-                              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-center
-                                       text-lg font-semibold outline-none focus:ring-2 
+                              className="w-24 h-24 rounded-2xl border-2 border-gray-200 text-center
+                                       text-3xl font-bold outline-none focus:ring-2 
                                        focus:ring-gray-900/10 focus:border-gray-400"
                               min="0"
                             />
-                            {slotTargetsMap[slot.slot_label] && (
-                              <div className="text-xs text-gray-500 text-center">
-                                Meta: {Math.round(slotTargetsMap[slot.slot_label].slot_target)}
-                              </div>
-                            )}
+                            <div className="text-sm text-gray-500 mt-2">
+                              Meta: {Math.round(slotTargetsMap[selectedTimeSlot]?.slot_target || 0)}
+                            </div>
                           </div>
                         );
                       })}
                     </div>
 
-                    {/* Quick Summary of All Operations (Collapsible) */}
-                    <details className="mt-6">
+                    {/* Collapsible operations details */}
+                    <details className="mt-8">
                       <summary className="text-sm font-medium text-gray-700 cursor-pointer hover:text-gray-900">
-                        Ver todas las operaciones de este operador
+                        ► Ver todas las operaciones de este operador
                       </summary>
-                      <div className="mt-4 space-y-2 border-t pt-4">
-                        {(selectedOperator.operations || []).map((op) => {
-                          const opTotal = getOperationTotal(op.id);
+                      <div className="mt-4 space-y-4 border-t pt-4">
+                        {operatorsList.map((op) => {
+                          const block = runData?.operations?.find(b => b.operator?.id === op.id);
                           return (
-                            <div key={op.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl">
-                              <div>
-                                <div className="font-medium text-gray-900">{op.operation_name}</div>
-                                <div className="text-xs text-gray-600">Capacidad: {op.capacity_per_hour}/hr</div>
+                            <div key={op.id} className="bg-gray-50 rounded-xl p-4">
+                              <div className="font-semibold text-gray-900 mb-2">Operador {op.operator_no}</div>
+                              <div className="space-y-2">
+                                {block?.operations?.map((operation) => {
+                                  const opTotal = getOperationTotal(operation.id);
+                                  return (
+                                    <div key={operation.id} className="flex justify-between items-center text-sm">
+                                      <span className="text-gray-600">{operation.operation_name}</span>
+                                      <span className="font-medium text-gray-900">{opTotal} pcs</span>
+                                    </div>
+                                  );
+                                })}
                               </div>
-                              <div className="text-lg font-bold text-gray-900">{opTotal}</div>
                             </div>
                           );
                         })}
