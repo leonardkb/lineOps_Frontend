@@ -1083,7 +1083,7 @@ export default function LineLeaderPage() {
                       </p>
                     </div>
 
-                    {/* Clean operator input grid - exactly like the image */}
+                    {/* Clean operator input grid with operator number and name */}
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
                       {operatorsList.map((op) => {
                         const operatorId = op.id;
@@ -1091,8 +1091,11 @@ export default function LineLeaderPage() {
                         
                         return (
                           <div key={op.id} className="flex flex-col items-center">
-                            <div className="text-xl font-semibold text-gray-900 mb-2">
-                              {op.operator_no}
+                            <div className="text-xl font-semibold text-gray-900">
+                              Op. {op.operator_no}
+                            </div>
+                            <div className="text-sm text-gray-600 mb-2 text-center">
+                              {op.operator_name || 'Sin nombre'}
                             </div>
                             <input
                               type="number"
@@ -1126,7 +1129,7 @@ export default function LineLeaderPage() {
                           const block = runData?.operations?.find(b => b.operator?.id === op.id);
                           return (
                             <div key={op.id} className="bg-gray-50 rounded-xl p-4">
-                              <div className="font-semibold text-gray-900 mb-2">Operador {op.operator_no}</div>
+                              <div className="font-semibold text-gray-900 mb-2">Operador {op.operator_no} - {op.operator_name}</div>
                               <div className="space-y-2">
                                 {block?.operations?.map((operation) => {
                                   const opTotal = getOperationTotal(operation.id);
