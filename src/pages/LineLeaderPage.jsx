@@ -87,6 +87,7 @@ function HourlyPlanCard({
   sewedBySlot,
   onChangeSewed,
   operationName = "",
+  lockedSlots = {}, // New prop for locked slots
 }) {
   const totalSewed = useMemo(() => {
     let sum = 0;
@@ -119,15 +120,15 @@ function HourlyPlanCard({
             El objetivo acumulado se detiene en el último meta.
           </div>
         </div>
-
-        
       </div>
 
       <div className="mt-4 border-t pt-4 overflow-x-auto">
         <table className="min-w-[620px] w-full border-separate border-spacing-0">
           <thead>
             <tr>
-              <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left text-xs font-semibold text-gray-700 border-y border-gray-200 border-r border-gray-200 rounded-tl-xl after:absolute after:top-0 after:right-0 after:h-full after:w-px after:bg-gray-200">
+              <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left text-xs 
+              font-semibold text-gray-700 border-y border-gray-200 border-r border-gray-200
+               rounded-tl-xl after:absolute after:top-0 after:right-0 after:h-full after:w-px after:bg-gray-200">
                 Fila
               </th>
               {slots.map((s, i) => (
@@ -172,6 +173,8 @@ function HourlyPlanCard({
               {slots.map((slot, idx) => {
                 const label = slot.slot_label;
                 const v = sewedBySlot?.[label] ?? "";
+                const isLocked = lockedSlots[label];
+                
                 return (
                   <td
                     key={label}
@@ -180,14 +183,27 @@ function HourlyPlanCard({
                       ${idx === slots.length - 1 ? "border-r-0" : ""}
                     `}
                   >
-                    <input
-                      value={v}
-                      onChange={(e) => onChangeSewed(label, e.target.value)}
-                      placeholder="0"
-                      inputMode="numeric"
-                      className="w-28 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm
-                                 outline-none focus:ring-2 focus:ring-gray-900/10"
-                    />
+                    <div className="relative">
+                      <input
+                        value={v}
+                        onChange={(e) => onChangeSewed(label, e.target.value)}
+                        placeholder="0"
+                        inputMode="numeric"
+                        disabled={isLocked}
+                        className={`
+                          w-28 rounded-xl border px-3 py-2 text-sm outline-none
+                          ${isLocked 
+                            ? 'bg-gray-100 border-gray-300 text-gray-500 cursor-not-allowed' 
+                            : 'bg-white border-gray-200 focus:ring-2 focus:ring-gray-900/10'
+                          }
+                        `}
+                      />
+                      {isLocked && (
+                        <span className="absolute -top-2 -right-2 text-xs bg-gray-800 text-white px-1.5 py-0.5 rounded-full">
+                          🔒
+                        </span>
+                      )}
+                    </div>
                   </td>
                 );
               })}
@@ -263,6 +279,9 @@ export default function LineLeaderPage() {
   const [latest, setLatest] = useState(null);
   const [runData, setRunData] = useState(null);
   const [sewedInputs, setSewedInputs] = useState({});
+  
+  // NEW: Locked slots state - tracks which slots are locked for each operator/operation
+  const [lockedSlots, setLockedSlots] = useState({});
 
   // State for line balancing assignments
   const [assignments, setAssignments] = useState([]);
@@ -468,18 +487,30 @@ export default function LineLeaderPage() {
       setRunData(json);
 
       const next = {};
+      // Load saved sewed data and initialize lock state
+      const initialLockedState = {};
+      
       for (const block of json.operations || []) {
         for (const op of block.operations || []) {
           const opId = op.id;
           const sewed = op.sewed_data || {};
           next[opId] = {};
+          
           for (const s of json.slots || []) {
             const label = s.slot_label;
-            next[opId][label] = sewed?.[label] ?? "";
+            const value = sewed?.[label] ?? "";
+            next[opId][label] = value;
+            
+            // Lock the slot if there's a value > 0
+            if (value && Number(value) > 0) {
+              initialLockedState[`${opId}-${label}`] = true;
+            }
           }
         }
       }
+      
       setSewedInputs(next);
+      setLockedSlots(initialLockedState);
 
       // Auto-select first time slot
       if (json.slots?.length > 0) {
@@ -575,7 +606,17 @@ export default function LineLeaderPage() {
     return map;
   }, [runData]);
 
+  // Updated handleSewedChange with lock check
   const handleSewedChange = useCallback((opId, slotLabel, value) => {
+    // Check if this slot is locked
+    const lockKey = `${opId}-${slotLabel}`;
+    if (lockedSlots[lockKey]) {
+      // Show a warning message
+      setSaveMsg("⚠️ Este valor ya está guardado y no puede modificarse");
+      setTimeout(() => setSaveMsg(""), 3000);
+      return;
+    }
+
     setSewedInputs(prev => {
       const operatorId = operationToOperatorMap.get(opId);
       if (!operatorId) {
@@ -598,7 +639,7 @@ export default function LineLeaderPage() {
       });
       return newState;
     });
-  }, [operationToOperatorMap, operatorToOperationIds]);
+  }, [operationToOperatorMap, operatorToOperationIds, lockedSlots]);
 
   useEffect(() => {
     if (!runData || !operatorToOperationIds.size) return;
@@ -639,6 +680,14 @@ export default function LineLeaderPage() {
     
     const primaryOpId = opIds[0];
     return sewedInputs[primaryOpId]?.[slotLabel] || '';
+  };
+
+  // Check if a slot is locked for an operator
+  const isSlotLocked = (operatorId, slotLabel) => {
+    const opIds = operatorToOperationIds.get(operatorId) || [];
+    if (opIds.length === 0) return false;
+    const primaryOpId = opIds[0];
+    return lockedSlots[`${primaryOpId}-${slotLabel}`] || false;
   };
 
   // ========== TOTAL FOR ALL OPERATIONS ==========
@@ -693,6 +742,7 @@ export default function LineLeaderPage() {
     };
   }, [sewedInputs]);
 
+  // Updated handleSave to lock saved values
   async function handleSave() {
     if (!runData?.run?.id) return;
 
@@ -742,10 +792,27 @@ export default function LineLeaderPage() {
         return;
       }
 
+      // After successful save, lock all non-zero values
+      const newLockedState = { ...lockedSlots };
+      for (const block of runData.operations || []) {
+        for (const op of block.operations || []) {
+          const opId = op.id;
+          for (const s of slots) {
+            const slotLabel = s.slot_label;
+            const value = sewedInputs?.[opId]?.[slotLabel];
+            const lockKey = `${opId}-${slotLabel}`;
+            if (value && Number(value) > 0) {
+              newLockedState[lockKey] = true;
+            }
+          }
+        }
+      }
+      setLockedSlots(newLockedState);
+
       updateLastSavedTime();
       setAlarmVisible(false);
 
-      setSaveMsg("✅ Actualizaciones por hora guardadas");
+      setSaveMsg("✅ Actualizaciones por hora guardadas y bloqueadas");
       await fetchRunData(runId);
       await fetchAssignments(runId);
     } catch (e) {
@@ -1041,7 +1108,7 @@ export default function LineLeaderPage() {
               )}
             </>
           ) : (
-            // SIMPLIFIED TIME-BASED OPERATIONS SECTION
+            // SIMPLIFIED TIME-BASED OPERATIONS SECTION WITH LOCKING
             <div className="space-y-4">
               {/* Time Slot Selection Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
@@ -1081,6 +1148,9 @@ export default function LineLeaderPage() {
                       <p className="text-sm text-gray-600 mt-1">
                         Ingresa las piezas cosidas en cada bloque horario
                       </p>
+                      <p className="text-xs text-gray-500 mt-2">
+                        🔒 Los valores guardados no pueden modificarse
+                      </p>
                     </div>
 
                     {/* Clean operator input grid with operator number and name */}
@@ -1088,29 +1158,43 @@ export default function LineLeaderPage() {
                       {operatorsList.map((op) => {
                         const operatorId = op.id;
                         const currentValue = getOperatorValueForSlot(operatorId, selectedTimeSlot);
+                        const isLocked = isSlotLocked(operatorId, selectedTimeSlot);
                         
                         return (
-                          <div key={op.id} className="flex flex-col items-center">
+                          <div key={op.id} className="flex flex-col items-center relative">
                             <div className="text-xl font-semibold text-gray-900">
                               Op. {op.operator_no}
                             </div>
                             <div className="text-sm text-gray-600 mb-2 text-center">
                               {op.operator_name || 'Sin nombre'}
                             </div>
-                            <input
-                              type="number"
-                              value={currentValue}
-                              onChange={(e) => handleTimeSlotChange(
-                                operatorId,
-                                selectedTimeSlot,
-                                e.target.value
+                            <div className="relative">
+                              <input
+                                type="number"
+                                value={currentValue}
+                                onChange={(e) => handleTimeSlotChange(
+                                  operatorId,
+                                  selectedTimeSlot,
+                                  e.target.value
+                                )}
+                                placeholder="0"
+                                disabled={isLocked}
+                                className={`
+                                  w-24 h-24 rounded-2xl border-2 text-center
+                                  text-3xl font-bold outline-none transition-all
+                                  ${isLocked 
+                                    ? 'bg-gray-100 border-gray-300 text-gray-500 cursor-not-allowed' 
+                                    : 'border-gray-200 focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400'
+                                  }
+                                `}
+                                min="0"
+                              />
+                              {isLocked && (
+                                <span className="absolute -top-2 -right-2 text-xs bg-gray-800 text-white px-1.5 py-0.5 rounded-full">
+                                  🔒
+                                </span>
                               )}
-                              placeholder="0"
-                              className="w-24 h-24 rounded-2xl border-2 border-gray-200 text-center
-                                       text-3xl font-bold outline-none focus:ring-2 
-                                       focus:ring-gray-900/10 focus:border-gray-400"
-                              min="0"
-                            />
+                            </div>
                             <div className="text-sm text-gray-500 mt-2">
                               Meta: {Math.round(slotTargetsMap[selectedTimeSlot]?.slot_target || 0)}
                             </div>
