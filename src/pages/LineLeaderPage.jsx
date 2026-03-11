@@ -87,7 +87,7 @@ function HourlyPlanCard({
   sewedBySlot,
   onChangeSewed,
   operationName = "",
-  lockedSlots = {}, // New prop for locked slots
+  lockedSlots = {},
 }) {
   const totalSewed = useMemo(() => {
     let sum = 0;
@@ -126,8 +126,8 @@ function HourlyPlanCard({
         <table className="min-w-[620px] w-full border-separate border-spacing-0">
           <thead>
             <tr>
-              <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left text-xs 
-              font-semibold text-gray-700 border-y border-gray-200 border-r border-gray-200
+              <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left text-xs font-semibold
+               text-gray-700 border-y border-gray-200 border-r border-gray-200 
                rounded-tl-xl after:absolute after:top-0 after:right-0 after:h-full after:w-px after:bg-gray-200">
                 Fila
               </th>
@@ -678,8 +678,19 @@ export default function LineLeaderPage() {
     const opIds = operatorToOperationIds.get(operatorId) || [];
     if (opIds.length === 0) return '';
     
+    // Try to get from primary operation first
     const primaryOpId = opIds[0];
-    return sewedInputs[primaryOpId]?.[slotLabel] || '';
+    const value = sewedInputs[primaryOpId]?.[slotLabel];
+    
+    // If primary operation doesn't have a value, check other operations
+    if (!value && opIds.length > 1) {
+      for (const opId of opIds) {
+        const val = sewedInputs[opId]?.[slotLabel];
+        if (val) return val;
+      }
+    }
+    
+    return value || '';
   };
 
   // Check if a slot is locked for an operator
@@ -688,6 +699,18 @@ export default function LineLeaderPage() {
     if (opIds.length === 0) return false;
     const primaryOpId = opIds[0];
     return lockedSlots[`${primaryOpId}-${slotLabel}`] || false;
+  };
+
+  // Calculate total cumulative for an operator across all slots (based on actual inputs)
+  const getOperatorTotalCumulative = (operatorId) => {
+    let cumulative = 0;
+    if (!runData?.slots) return cumulative;
+    
+    for (const slot of runData.slots) {
+      const slotValue = getOperatorValueForSlot(operatorId, slot.slot_label);
+      cumulative += Number(slotValue) || 0;
+    }
+    return cumulative;
   };
 
   // ========== TOTAL FOR ALL OPERATIONS ==========
@@ -1110,11 +1133,12 @@ export default function LineLeaderPage() {
           ) : (
             // SIMPLIFIED TIME-BASED OPERATIONS SECTION WITH LOCKING
             <div className="space-y-4">
-              {/* Time Slot Selection Cards */}
+              {/* Time Slot Selection Cards with cumulative meta */}
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
                 {slots.map((slot) => {
                   const isSelected = selectedTimeSlot === slot.slot_label;
                   const slotTarget = slotTargetsMap[slot.slot_label]?.slot_target || 0;
+                  const cumulativeTarget = slotTargetsMap[slot.slot_label]?.cumulative_target || 0;
                   
                   return (
                     <button
@@ -1132,12 +1156,15 @@ export default function LineLeaderPage() {
                       <div className={`text-xs mt-1 ${isSelected ? 'text-gray-300' : 'text-gray-500'}`}>
                         Meta: {Math.round(slotTarget)}
                       </div>
+                      <div className={`text-xs font-semibold mt-1 ${isSelected ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Acum: {Math.round(cumulativeTarget)}
+                      </div>
                     </button>
                   );
                 })}
               </div>
 
-              {/* Selected Time Slot Data Entry Section - Clean like the image */}
+              {/* Selected Time Slot Data Entry Section - with cumulative based on actual inputs */}
               {selectedTimeSlot && (
                 <div className="rounded-3xl border bg-white shadow-sm overflow-hidden">
                   <div className="p-6">
@@ -1153,20 +1180,31 @@ export default function LineLeaderPage() {
                       </p>
                     </div>
 
-                    {/* Clean operator input grid with operator number and name */}
+                    {/* Clean operator input grid with operator number, name, capacity, and cumulative total based on actual inputs */}
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
                       {operatorsList.map((op) => {
                         const operatorId = op.id;
                         const currentValue = getOperatorValueForSlot(operatorId, selectedTimeSlot);
                         const isLocked = isSlotLocked(operatorId, selectedTimeSlot);
                         
+                        // Get operator's block for capacity info
+                        const operatorBlock = runData?.operations?.find(b => b.operator?.id === operatorId);
+                        const firstOperation = operatorBlock?.operations?.[0];
+                        const capacity = firstOperation?.capacity_per_hour || 0;
+                        
+                        // Calculate cumulative total for this operator based on ALL inputs across all slots
+                        const cumulativeTotal = getOperatorTotalCumulative(operatorId);
+                        
                         return (
                           <div key={op.id} className="flex flex-col items-center relative">
                             <div className="text-xl font-semibold text-gray-900">
                               Op. {op.operator_no}
                             </div>
-                            <div className="text-sm text-gray-600 mb-2 text-center">
+                            <div className="text-sm text-gray-600 mb-1 text-center">
                               {op.operator_name || 'Sin nombre'}
+                            </div>
+                            <div className="text-xs font-medium text-blue-600 mb-2">
+                              Cap: {capacity} pcs/h
                             </div>
                             <div className="relative">
                               <input
@@ -1195,15 +1233,15 @@ export default function LineLeaderPage() {
                                 </span>
                               )}
                             </div>
-                            <div className="text-sm text-gray-500 mt-2">
-                              Meta: {Math.round(slotTargetsMap[selectedTimeSlot]?.slot_target || 0)}
+                            <div className="text-sm font-semibold text-gray-700 mt-2">
+                              Total acumulado: {cumulativeTotal}
                             </div>
                           </div>
                         );
                       })}
                     </div>
 
-                    {/* Collapsible operations details */}
+                    {/* Collapsible operations details - also showing capacity */}
                     <details className="mt-8">
                       <summary className="text-sm font-medium text-gray-700 cursor-pointer hover:text-gray-900">
                         ► Ver todas las operaciones de este operador
@@ -1211,16 +1249,32 @@ export default function LineLeaderPage() {
                       <div className="mt-4 space-y-4 border-t pt-4">
                         {operatorsList.map((op) => {
                           const block = runData?.operations?.find(b => b.operator?.id === op.id);
+                          
+                          // Calculate operator cumulative total across all slots
+                          const operatorCumulativeTotal = getOperatorTotalCumulative(op.id);
+                          
                           return (
                             <div key={op.id} className="bg-gray-50 rounded-xl p-4">
-                              <div className="font-semibold text-gray-900 mb-2">Operador {op.operator_no} - {op.operator_name}</div>
+                              <div className="flex justify-between items-center mb-2">
+                                <div className="font-semibold text-gray-900">
+                                  Operador {op.operator_no} - {op.operator_name}
+                                </div>
+                                <div className="text-sm bg-gray-200 px-3 py-1 rounded-full">
+                                  Total acumulado: {operatorCumulativeTotal} pcs
+                                </div>
+                              </div>
                               <div className="space-y-2">
                                 {block?.operations?.map((operation) => {
                                   const opTotal = getOperationTotal(operation.id);
                                   return (
                                     <div key={operation.id} className="flex justify-between items-center text-sm">
                                       <span className="text-gray-600">{operation.operation_name}</span>
-                                      <span className="font-medium text-gray-900">{opTotal} pcs</span>
+                                      <div className="flex items-center gap-4">
+                                        <span className="text-xs text-gray-500">
+                                          Cap: {operation.capacity_per_hour || 0} pcs/h
+                                        </span>
+                                        <span className="font-medium text-gray-900">{opTotal} pcs</span>
+                                      </div>
                                     </div>
                                   );
                                 })}
