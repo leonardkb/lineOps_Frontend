@@ -5,7 +5,6 @@ import axios from 'axios';
 import NavSkyrina from '../components/NavSkyrina';
 
 
-
 function toYMD(d) {
   if (!d) return "";
   const dt = new Date(d);
@@ -445,8 +444,8 @@ export default function SkyrinaDashboard() {
               <button
                 onClick={manualRefresh}
                 disabled={loading}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 
-                rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2 shadow-sm transition-colors"
+                className="bg-blue-500 hover:bg-blue-600 text-white 
+                px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2 shadow-sm transition-colors"
               >
                 <span className="text-lg">🔄</span>
                 Actualizar
@@ -457,8 +456,8 @@ export default function SkyrinaDashboard() {
                   type="date"
                   value={date}
                   onChange={handleDateChange}
-                  className="w-full sm:w-auto rounded-lg border-0 bg-white 
-                  px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-gray-900/20"
+                  className="w-full sm:w-auto rounded-lg border-0 
+                  bg-white px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-gray-900/20"
                 />
               </div>
 
@@ -469,7 +468,8 @@ export default function SkyrinaDashboard() {
                   navigate('/');
                 }}
                 className="bg-white border-2 border-red-200 text-red-600 
-                hover:bg-red-50 hover:border-red-300 px-5 py-2 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
+                hover:bg-red-50 hover:border-red-300 px-5 py-2 rounded-xl 
+                text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
               >
                 Cerrar sesión
               </button>
@@ -488,7 +488,8 @@ export default function SkyrinaDashboard() {
         {!loading && summary && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-5 mb-8">
             {/* Objetivo Total */}
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+            <div className="bg-white rounded-2xl shadow-lg p-6 
+            border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-1">Objetivo Total</p>
@@ -510,7 +511,8 @@ export default function SkyrinaDashboard() {
             </div>
 
             {/* Eficiencia con indicador */}
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+            <div className="bg-white rounded-2xl shadow-lg p-6 
+            border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div className="w-full">
                   <div className="flex items-center gap-2 mb-1">
@@ -524,8 +526,7 @@ export default function SkyrinaDashboard() {
             </div>
 
             {/* Cumplimiento con indicador */}
-            <div className="bg-white rounded-2xl shadow-lg p-6 
-            border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div className="w-full">
                   <div className="flex items-center gap-2 mb-1">
@@ -544,8 +545,7 @@ export default function SkyrinaDashboard() {
             </div>
 
             {/* Meta en tiempo real */}
-            <div className="bg-white rounded-2xl shadow-lg p-6 
-            border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-1">Meta en tiempo real</p>
@@ -640,7 +640,7 @@ export default function SkyrinaDashboard() {
           </div>
         )}
 
-        {/* Line Cards */}
+        {/* Line Cards - REMOVED ONCLICK NAVIGATION */}
         {!loading && sortedLines.length > 0 && (
           <div className="mt-8">
             <div className="flex items-center justify-between mb-6">
@@ -649,7 +649,7 @@ export default function SkyrinaDashboard() {
                   Detalles de Líneas de Producción
                 </h2>
                 <p className="text-sm text-gray-500 mt-1">
-                  Haz clic en cualquier línea para ver información detallada de producción
+                  Vista general del rendimiento de las líneas
                 </p>
               </div>
               <div className="flex gap-2">
@@ -691,13 +691,12 @@ export default function SkyrinaDashboard() {
                 return (
                   <div
                     key={`${line.lineNo}-${idx}`}
-                    onClick={() => navigate(`/admin-dashboard?line=${line.lineNo}&date=${date}`)}
                     onMouseEnter={() => setHoveredCard(line.lineNo)}
                     onMouseLeave={() => setHoveredCard(null)}
                     className={`group bg-white rounded-2xl shadow-lg 
                       hover:shadow-2xl transition-all duration-300
                       transform hover:-translate-y-2
-                      cursor-pointer overflow-hidden border-2 ${
+                      overflow-hidden border-2 ${
                       hoveredCard === line.lineNo ? statusColors[status.color] : 'border-transparent'
                     }`}
                   >
@@ -807,11 +806,7 @@ export default function SkyrinaDashboard() {
                         </span>
                       </div>
 
-                      <div className="mt-4 text-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                        <span className="text-xs font-medium text-gray-900 bg-gray-100 px-4 py-2 rounded-full">
-                          Haz clic para ver detalles →
-                        </span>
-                      </div>
+                      {/* Removed the "Haz clic para ver detalles" text */}
                     </div>
                   </div>
                 );
