@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import NavDashboard from '../components/NavDashboard';
 
-{/*const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";*/}
+
 
 function toYMD(d) {
   if (!d) return "";
@@ -89,34 +89,76 @@ export default function Dashboard() {
       });
   }, []);
 
-  const computeRealtimeTarget = (runData, selectedDate) => {
-    if (!runData || !selectedDate) return 0;
-    const now = new Date();
-    const todayStr = selectedDate;
-    const slots = (runData.slots || [])
-      .map(slot => {
-        const start = new Date(`${todayStr}T${slot.slot_start}`);
-        const end = new Date(`${todayStr}T${slot.slot_end}`);
-        return { ...slot, start, end };
-      })
-      .filter(s => s.start && s.end);
-    let cumulative = 0;
-    for (const slot of slots) {
+const computeRealtimeTarget = (runData, selectedDate) => {
+  if (!runData || !selectedDate) return 0;
+  
+  const now = new Date();
+  const todayStr = selectedDate;
+  
+  // Production timeline: 8:00 AM start
+  const PRODUCTION_START = new Date(`${todayStr}T08:00:00`);
+  
+  // Get the last slot end time (should be 17:36:00)
+  const slots = (runData.slots || [])
+    .map(slot => {
+      const end = new Date(`${todayStr}T${slot.slot_end}`);
+      return { ...slot, end };
+    })
+    .filter(s => s.end);
+  
+  // Find the latest end time from slots (should be 17:36:00)
+  const PRODUCTION_END = slots.length > 0 
+    ? new Date(Math.max(...slots.map(s => s.end.getTime())))
+    : new Date(`${todayStr}T17:36:00`);
+  
+  // Get slots with their targets for proportional calculation
+  const slotsWithTargets = (runData.slots || [])
+    .map(slot => {
+      const start = new Date(`${todayStr}T${slot.slot_start}`);
+      const end = new Date(`${todayStr}T${slot.slot_end}`);
+      
+      // Find the target for this slot
       const slotTarget = (runData.slotTargets || []).find(
         st => st.slot_label === slot.slot_label
       )?.slot_target || 0;
-      if (now >= slot.end) {
-        cumulative += Number(slotTarget);
-      } else if (now >= slot.start && now < slot.end) {
-        const elapsed = (now - slot.start) / (slot.end - slot.start);
-        cumulative += Number(slotTarget) * elapsed;
-        break;
-      } else {
-        break;
-      }
-    }
-    return Math.round(cumulative * 100) / 100;
-  };
+      
+      return { 
+        ...slot, 
+        start, 
+        end,
+        target: Number(slotTarget)
+      };
+    })
+    .filter(s => s.start && s.end);
+  
+  if (slotsWithTargets.length === 0) return 0;
+  
+  // Get total target
+  const totalTarget = runData.run?.target_pcs || 0;
+  
+  // If production hasn't started yet (before 8:00 AM)
+  if (now < PRODUCTION_START) {
+    return 0;
+  }
+  
+  // If production is complete (after last slot end - 5:36 PM)
+  if (now >= PRODUCTION_END) {
+    return totalTarget;
+  }
+  
+  // Calculate real-time target based on time elapsed since 8:00 AM
+  const elapsedMilliseconds = now - PRODUCTION_START;
+  const totalProductionMilliseconds = PRODUCTION_END - PRODUCTION_START;
+  
+  // Simple proportional calculation based on time
+  if (totalProductionMilliseconds > 0) {
+    const progressRatio = elapsedMilliseconds / totalProductionMilliseconds;
+    const realTimeTarget = totalTarget * progressRatio;
+    return Math.min(Math.round(realTimeTarget * 100) / 100, totalTarget);
+  }
+  
+  return 0;
+};
 
   useEffect(() => {
     const fetchLineDetails = async () => {
@@ -291,9 +333,7 @@ export default function Dashboard() {
                   localStorage.removeItem('user');
                   navigate('/');
                 }}
-                className="bg-white border-2 border-red-200 text-red-600 hover:bg-red-50
-                 hover:border-red-300 px-5 py-2 rounded-xl text-sm font-medium 
-                 transition-all duration-200 flex items-center justify-center gap-2"
+                className="bg-white border-2 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 px-5 py-2 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
               >
                 Cerrar sesión
               </button>
@@ -303,9 +343,7 @@ export default function Dashboard() {
 
         {/* Error message */}
         {error && (
-          <div className="bg-red-50 border-l-4 border-red-500 
-          text-red-700 px-6 py-4 rounded-xl mb-8 
-          animate-slideDown flex items-center gap-3 shadow-md">
+          <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-6 py-4 rounded-xl mb-8 animate-slideDown flex items-center gap-3 shadow-md">
             <div>
               <p className="font-semibold">Error al cargar datos</p>
               <p className="text-sm text-red-600">{error}</p>
@@ -317,12 +355,10 @@ export default function Dashboard() {
         {!loading && summary && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-5 mb-8">
             {/* Objetivo Total */}
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 
-            hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-sm font-medium text-gray-500 
-                  uppercase tracking-wider mb-1">Objetivo Total</p>
+                  <p className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-1">Objetivo Total</p>
                   <p className="text-3xl font-bold text-gray-900">{formatNumber(summary.totalTarget)}</p>
                   <p className="text-xs text-gray-500 mt-2">piezas</p>
                 </div>
@@ -330,12 +366,10 @@ export default function Dashboard() {
             </div>
 
             {/* Total Cosido */}
-            <div className="bg-white rounded-2xl shadow-lg p-6 border 
-            border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-sm font-medium text-gray-500
-                   uppercase tracking-wider mb-1">Total Cosido</p>
+                  <p className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-1">Total Cosido</p>
                   <p className="text-3xl font-bold text-gray-900">{formatNumber(summary.totalSewed)}</p>
                   <p className="text-xs text-gray-500 mt-2">piezas</p>
                 </div>
