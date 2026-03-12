@@ -42,8 +42,12 @@ export default function LoginPage() {
         navigate("/admin", { replace: true });
       } else if (user.role === 'soporte_it') {
         navigate('/line-tv', { replace: true }); // Redirect soporte_it to LineTvDashboard
-      } else {
+      } else if(roleNorm === "engineer") {
         navigate("/planner", { replace: true });
+      }else if(roleNorm === "skyrina") {
+        navigate("/skyrina", { replace: true });
+      }else {
+        navigate("/", { replace: true });
       }
 
     } catch (err) {
@@ -142,7 +146,7 @@ export default function LoginPage() {
         <div className="mt-4 text-xs text-center">
           <button
             onClick={() =>
-              window.open("/api/health", "_blank")
+              window.open("http://localhost:5000/api/health", "_blank")
             }
             className="text-blue-500 hover:underline"
           >
