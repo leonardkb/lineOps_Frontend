@@ -6,7 +6,6 @@ import {
 } from 'recharts';
 import NavDashboard from '../components/NavDashboard';
 
-{/*const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";*/}
 
 function toYMD(d) {
   if (!d) return "";
@@ -484,131 +483,232 @@ export default function Dashboard() {
         )}
 
         {/* Line Performance Chart */}
-        <div className="bg-white rounded-2xl shadow-xl p-6 mb-8 border border-gray-100">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                Resumen del Desempeño por Línea
-              </h2>
-              <p className="text-sm text-gray-500 mt-1">
-                Producción, Objetivo y Eficiencia para{" "}
-                {new Date(date).toLocaleDateString('es-MX', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric'
-                })}
-              </p>
-            </div>
-            <div className="bg-gray-50 px-4 py-2 rounded-xl text-sm">
-              <span className="font-semibold text-gray-900">{lineData.length}</span>
-              <span className="text-gray-600"> Líneas Activas</span>
-            </div>
-          </div>
+        {!loading && lineData.length > 0 ? (
+  <div className="overflow-x-auto -mx-4 sm:mx-0">
+    <div className="min-w-[600px] sm:min-w-0 px-4 sm:px-0">
+      <ResponsiveContainer width="100%" height={isMobile ? 350 : 450}>
+        <ComposedChart
+          data={(() => {
+            // First, ensure we have unique line numbers
+            const uniqueLines = [...new Set(lineData.map(item => item.lineNo))];
+            
+            // Sort line numbers numerically
+            const sortedLineNos = uniqueLines.sort((a, b) => {
+              const numA = parseInt(a) || 0;
+              const numB = parseInt(b) || 0;
+              return numA - numB;
+            });
+            
+            // Map to chart data with proper aggregation
+            return sortedLineNos.map(lineNo => {
+              // Get all runs for this line
+              const runs = lineRunData[lineNo] || [];
+              
+              // Aggregate totals across all styles/runs for this line
+              const aggregatedData = runs.reduce((acc, run) => {
+                const sewed = calculateFinishedGarments(run);
+                const realtimeTarget = computeRealtimeTarget(run, date);
+                const operatorsCount = run.operators?.length || 0;
+                const workingHours = run.run?.working_hours || 0;
+                const sam = run.run?.sam_minutes || 0;
+                const totalSAMOutput = sewed * sam;
+                const availableMinutes = operatorsCount * workingHours * 60;
+                
+                return {
+                  totalSewed: acc.totalSewed + sewed,
+                  realtimeTarget: acc.realtimeTarget + realtimeTarget,
+                  totalSAMOutput: acc.totalSAMOutput + totalSAMOutput,
+                  availableMinutes: acc.availableMinutes + availableMinutes,
+                  operatorCount: acc.operatorCount + operatorsCount,
+                  // Store individual style data for tooltip
+                  styles: [...acc.styles, {
+                    name: run.style,
+                    sewed,
+                    realtimeTarget,
+                    efficiency: availableMinutes > 0 ? (totalSAMOutput / availableMinutes) * 100 : 0,
+                    sam,
+                    operators: operatorsCount
+                  }]
+                };
+              }, {
+                totalSewed: 0,
+                realtimeTarget: 0,
+                totalSAMOutput: 0,
+                availableMinutes: 0,
+                operatorCount: 0,
+                styles: []
+              });
 
-          {!loading && lineData.length > 0 ? (
-            <div className="overflow-x-auto -mx-4 sm:mx-0">
-              <div className="min-w-[600px] sm:min-w-0 px-4 sm:px-0">
-                <ResponsiveContainer width="100%" height={isMobile ? 350 : 450}>
-                  <ComposedChart
-                    data={lineData.map(line => ({
-                      lineNo: line.lineNo,
-                      totalSewed: line.totalSewed,
-                      realtimeTarget: lineRealtimeTargets[line.lineNo] || 0,
-                      efficiency: lineEfficiencies[line.lineNo] || 0
-                    }))}
-                    margin={{ top: 20, right: 30, left: 20, bottom: isMobile ? 70 : 40 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis
-                      dataKey="lineNo"
-                      angle={isMobile ? -45 : 0}
-                      textAnchor={isMobile ? 'end' : 'middle'}
-                      height={isMobile ? 70 : 30}
-                      interval={0}
-                      tick={{ fontSize: isMobile ? 12 : 14, fill: '#4b5563' }}
-                      label={{ value: 'Número de Línea', position: 'bottom', offset: 50, fill: '#6b7280' }}
-                    />
-                    <YAxis
-                      yAxisId="left"
-                      tickFormatter={formatNumber}
-                      stroke="#8884d8"
-                      tick={{ fontSize: isMobile ? 12 : 14, fill: '#4b5563' }}
-                      label={{ value: 'Cantidad', angle: -90, position: 'insideLeft', fill: '#6b7280' }}
-                    />
-                    <YAxis
-                      yAxisId="right"
-                      orientation="right"
-                      tickFormatter={(value) => `${value}%`}
-                      stroke="#10b981"
-                      tick={{ fontSize: isMobile ? 12 : 14, fill: '#4b5563' }}
-                      label={{ value: 'Eficiencia %', angle: 90, position: 'insideRight', fill: '#6b7280' }}
-                    />
-                    <Tooltip
-                      formatter={(value, name) => {
-                        if (name === 'Eficiencia %') return [`${value}%`, name];
-                        return [formatNumber(value), name];
-                      }}
-                      contentStyle={{
-                        backgroundColor: 'rgba(255,255,255,0.95)',
-                        borderRadius: '12px',
-                        border: 'none',
-                        boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)',
-                        padding: '12px'
-                      }}
-                    />
-                    <Legend
-                      wrapperStyle={{ fontSize: isMobile ? 12 : 14, paddingTop: '20px' }}
-                      iconType="circle"
-                    />
+              // Calculate weighted average efficiency for the line
+              const efficiency = aggregatedData.availableMinutes > 0 
+                ? (aggregatedData.totalSAMOutput / aggregatedData.availableMinutes) * 100 
+                : 0;
 
-                    <Bar
-                      yAxisId="left"
-                      dataKey="totalSewed"
-                      fill="#10b981"
-                      name="Producido"
-                      barSize={isMobile ? 20 : 35}
-                      radius={[4, 4, 0, 0]}
-                    />
+              return {
+                lineNo: lineNo,
+                totalSewed: aggregatedData.totalSewed,
+                realtimeTarget: aggregatedData.realtimeTarget,
+                efficiency: Math.round(efficiency * 100) / 100,
+                styleCount: runs.length,
+                styles: aggregatedData.styles.sort((a, b) => a.name.localeCompare(b.name))
+              };
+            });
+          })()}
+          margin={{ top: 20, right: 30, left: 20, bottom: isMobile ? 70 : 40 }}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis
+            dataKey="lineNo"
+            type="category"
+            angle={isMobile ? -45 : 0}
+            textAnchor={isMobile ? 'end' : 'middle'}
+            height={isMobile ? 70 : 30}
+            interval={0}
+            tick={{ fontSize: isMobile ? 12 : 14, fill: '#4b5563' }}
+            label={{ value: 'Número de Línea', position: 'bottom', offset: 50, fill: '#6b7280' }}
+          />
+          <YAxis
+            yAxisId="left"
+            tickFormatter={formatNumber}
+            stroke="#8884d8"
+            tick={{ fontSize: isMobile ? 12 : 14, fill: '#4b5563' }}
+            label={{ value: 'Cantidad', angle: -90, position: 'insideLeft', fill: '#6b7280' }}
+          />
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            tickFormatter={(value) => `${value}%`}
+            stroke="#10b981"
+            tick={{ fontSize: isMobile ? 12 : 14, fill: '#4b5563' }}
+            label={{ value: 'Eficiencia %', angle: 90, position: 'insideRight', fill: '#6b7280' }}
+          />
+          <Tooltip
+            content={({ active, payload, label }) => {
+              if (active && payload && payload.length) {
+                const data = payload[0].payload;
+                
+                return (
+                  <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-xl border border-gray-200 p-4 min-w-[320px]">
+                    <div className="border-b border-gray-200 pb-2 mb-3">
+                      <p className="font-bold text-gray-900 text-lg">
+                        Línea {data.lineNo}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {data.styleCount} {data.styleCount === 1 ? 'estilo' : 'estilos'}
+                      </p>
+                    </div>
+                    
+                    {/* Show each style's details */}
+                    {data.styles.map((style, idx) => (
+                      <div key={idx} className="mb-4 last:mb-0">
+                        <p className="font-semibold text-gray-800 text-base mb-2">
+                          {style.name}
+                        </p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-purple-50 p-3 rounded-lg">
+                            <span className="text-purple-600 text-xs block font-medium">Objetivo (ahora)</span>
+                            <span className="text-xl font-bold text-purple-700">
+                              {formatNumber(style.realtimeTarget)}
+                            </span>
+                          </div>
+                          <div className="bg-green-50 p-3 rounded-lg">
+                            <span className="text-green-600 text-xs block font-medium">Producido</span>
+                            <span className="text-xl font-bold text-green-700">
+                              {formatNumber(style.sewed)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-2 flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Eficiencia:</span>
+                          <span className={`text-lg font-bold ${
+                            style.efficiency >= 80 ? 'text-green-600' :
+                            style.efficiency >= 60 ? 'text-yellow-600' :
+                            'text-red-600'
+                          }`}>
+                            {style.efficiency.toFixed(1)}%
+                          </span>
+                        </div>
+                        {idx < data.styles.length - 1 && (
+                          <div className="border-b border-gray-200 my-3"></div>
+                        )}
+                      </div>
+                    ))}
+                    
+                    {/* Show totals */}
+                    <div className="mt-4 pt-3 border-t-2 border-gray-200">
+                      <p className="text-sm font-medium text-gray-700 mb-3">Totales de línea:</p>
+                      <div className="grid grid-cols-3 gap-3 text-center">
+                        <div className="bg-gray-50 p-2 rounded-lg">
+                          <span className="text-xs text-gray-500 block">Objetivo</span>
+                          <span className="text-lg font-bold text-gray-900">{formatNumber(data.realtimeTarget)}</span>
+                        </div>
+                        <div className="bg-gray-50 p-2 rounded-lg">
+                          <span className="text-xs text-gray-500 block">Producido</span>
+                          <span className="text-lg font-bold text-gray-900">{formatNumber(data.totalSewed)}</span>
+                        </div>
+                        <div className="bg-gray-50 p-2 rounded-lg">
+                          <span className="text-xs text-gray-500 block">Eficiencia</span>
+                          <span className="text-lg font-bold text-gray-900">{data.efficiency}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            }}
+          />
+          <Legend
+            wrapperStyle={{ fontSize: isMobile ? 12 : 14, paddingTop: '20px' }}
+            iconType="circle"
+          />
 
-                    <Line
-                      yAxisId="left"
-                      type="monotone"
-                      dataKey="realtimeTarget"
-                      stroke="#8b5cf6"
-                      strokeWidth={3}
-                      dot={{ r: isMobile ? 4 : 6, fill: "#8b5cf6", strokeWidth: 2, stroke: "white" }}
-                      activeDot={{ r: 8, fill: "#8b5cf6", stroke: "white", strokeWidth: 2 }}
-                      name="Objetivo (ahora)"
-                    />
+          <Bar
+            yAxisId="left"
+            dataKey="totalSewed"
+            fill="#10b981"
+            name="Producido"
+            barSize={isMobile ? 20 : 35}
+            radius={[4, 4, 0, 0]}
+          />
 
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="efficiency"
-                      stroke="#10b981"
-                      strokeWidth={2}
-                      dot={{ r: isMobile ? 3 : 4, fill: "#10b981", strokeWidth: 2, stroke: "white" }}
-                      activeDot={{ r: 6, fill: "#10b981", stroke: "white", strokeWidth: 2 }}
-                      name="Eficiencia %"
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          ) : (
-            !loading && (
-              <div className="text-center py-16 bg-gray-50 rounded-xl">
-                <p className="text-gray-500 text-lg font-medium">
-                  No se encontraron datos de producción para esta fecha
-                </p>
-                <p className="text-gray-400 text-sm mt-2">
-                  Intenta seleccionar otra fecha
-                </p>
-              </div>
-            )
-          )}
-        </div>
+          <Line
+            yAxisId="left"
+            type="monotone"
+            dataKey="realtimeTarget"
+            stroke="#8b5cf6"
+            strokeWidth={3}
+            dot={{ r: isMobile ? 4 : 6, fill: "#8b5cf6", strokeWidth: 2, stroke: "white" }}
+            activeDot={{ r: 8, fill: "#8b5cf6", stroke: "white", strokeWidth: 2 }}
+            name="Objetivo (ahora)"
+          />
+
+          <Line
+            yAxisId="right"
+            type="monotone"
+            dataKey="efficiency"
+            stroke="#10b981"
+            strokeWidth={2}
+            dot={{ r: isMobile ? 3 : 4, fill: "#10b981", strokeWidth: 2, stroke: "white" }}
+            activeDot={{ r: 6, fill: "#10b981", stroke: "white", strokeWidth: 2 }}
+            name="Eficiencia %"
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  </div>
+) : (
+  !loading && (
+    <div className="text-center py-16 bg-gray-50 rounded-xl">
+      <p className="text-gray-500 text-lg font-medium">
+        No se encontraron datos de producción para esta fecha
+      </p>
+      <p className="text-gray-400 text-sm mt-2">
+        Intenta seleccionar otra fecha
+      </p>
+    </div>
+  )
+)}
 
         {/* Loading state */}
         {loading && (
@@ -633,18 +733,15 @@ export default function Dashboard() {
                 </p>
               </div>
               <div className="flex gap-2">
-                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full 
-                text-xs font-medium flex items-center gap-1">
+                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium flex items-center gap-1">
                   <span className="w-2 h-2 bg-green-500 rounded-full"></span>
                   En Ruta
                 </span>
-                <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full 
-                text-xs font-medium flex items-center gap-1">
+                <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-medium flex items-center gap-1">
                   <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
                   Atrasado
                 </span>
-                <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full 
-                text-xs font-medium flex items-center gap-1">
+                <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium flex items-center gap-1">
                   <span className="w-2 h-2 bg-red-500 rounded-full"></span>
                   Crítico
                 </span>
