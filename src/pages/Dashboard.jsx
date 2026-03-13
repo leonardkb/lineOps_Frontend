@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import NavDashboard from '../components/NavDashboard';
 
-
+{/*const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";*/}
 
 function toYMD(d) {
   if (!d) return "";
@@ -15,7 +15,7 @@ function toYMD(d) {
   return dt.toISOString().slice(0, 10);
 }
 
-// Helper function to calculate finished garments (similar to LineLeaderPage)
+// Helper function to calculate finished garments
 const calculateFinishedGarments = (runData) => {
   if (!runData) return 0;
   let total = 0;
@@ -35,6 +35,71 @@ const calculateFinishedGarments = (runData) => {
   return total;
 };
 
+// Helper function to calculate real-time target
+const computeRealtimeTarget = (runData, selectedDate) => {
+  if (!runData || !selectedDate) return 0;
+  
+  const now = new Date();
+  const todayStr = selectedDate;
+  
+  // Production timeline: 8:00 AM start
+  const PRODUCTION_START = new Date(`${todayStr}T08:00:00`);
+  
+  // Get the last slot end time (should be 17:36:00)
+  const slots = (runData.slots || [])
+    .map(slot => {
+      const end = new Date(`${todayStr}T${slot.slot_end}`);
+      return { ...slot, end };
+    })
+    .filter(s => s.end);
+  
+  // Find the latest end time from slots
+  const PRODUCTION_END = slots.length > 0 
+    ? new Date(Math.max(...slots.map(s => s.end.getTime())))
+    : new Date(`${todayStr}T17:36:00`);
+  
+  const slotsWithTargets = (runData.slots || [])
+    .map(slot => {
+      const start = new Date(`${todayStr}T${slot.slot_start}`);
+      const end = new Date(`${todayStr}T${slot.slot_end}`);
+      
+      const slotTarget = (runData.slotTargets || []).find(
+        st => st.slot_label === slot.slot_label
+      )?.slot_target || 0;
+      
+      return { 
+        ...slot, 
+        start, 
+        end,
+        target: Number(slotTarget)
+      };
+    })
+    .filter(s => s.start && s.end);
+  
+  if (slotsWithTargets.length === 0) return 0;
+  
+  const totalTarget = runData.run?.target_pcs || 0;
+  
+  if (now < PRODUCTION_START) {
+    return 0;
+  }
+  
+  if (now >= PRODUCTION_END) {
+    return totalTarget;
+  }
+  
+  const elapsedMilliseconds = now - PRODUCTION_START;
+  const totalProductionMilliseconds = PRODUCTION_END - PRODUCTION_START;
+  
+  if (totalProductionMilliseconds > 0) {
+    const progressRatio = elapsedMilliseconds / totalProductionMilliseconds;
+    const realTimeTarget = totalTarget * progressRatio;
+    return Math.min(Math.round(realTimeTarget * 100) / 100, totalTarget);
+  }
+  
+  return 0;
+};
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
@@ -48,7 +113,7 @@ export default function Dashboard() {
 
   const [globalRealtimeTarget, setGlobalRealtimeTarget] = useState(0);
   const [lineRealtimeTargets, setLineRealtimeTargets] = useState({});
-  const [lineEfficiencies, setLineEfficiencies] = useState({}); // New state for line efficiencies
+  const [lineEfficiencies, setLineEfficiencies] = useState({});
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
   const [hoveredCard, setHoveredCard] = useState(null);
@@ -89,77 +154,6 @@ export default function Dashboard() {
       });
   }, []);
 
-const computeRealtimeTarget = (runData, selectedDate) => {
-  if (!runData || !selectedDate) return 0;
-  
-  const now = new Date();
-  const todayStr = selectedDate;
-  
-  // Production timeline: 8:00 AM start
-  const PRODUCTION_START = new Date(`${todayStr}T08:00:00`);
-  
-  // Get the last slot end time (should be 17:36:00)
-  const slots = (runData.slots || [])
-    .map(slot => {
-      const end = new Date(`${todayStr}T${slot.slot_end}`);
-      return { ...slot, end };
-    })
-    .filter(s => s.end);
-  
-  // Find the latest end time from slots (should be 17:36:00)
-  const PRODUCTION_END = slots.length > 0 
-    ? new Date(Math.max(...slots.map(s => s.end.getTime())))
-    : new Date(`${todayStr}T17:36:00`);
-  
-  // Get slots with their targets for proportional calculation
-  const slotsWithTargets = (runData.slots || [])
-    .map(slot => {
-      const start = new Date(`${todayStr}T${slot.slot_start}`);
-      const end = new Date(`${todayStr}T${slot.slot_end}`);
-      
-      // Find the target for this slot
-      const slotTarget = (runData.slotTargets || []).find(
-        st => st.slot_label === slot.slot_label
-      )?.slot_target || 0;
-      
-      return { 
-        ...slot, 
-        start, 
-        end,
-        target: Number(slotTarget)
-      };
-    })
-    .filter(s => s.start && s.end);
-  
-  if (slotsWithTargets.length === 0) return 0;
-  
-  // Get total target
-  const totalTarget = runData.run?.target_pcs || 0;
-  
-  // If production hasn't started yet (before 8:00 AM)
-  if (now < PRODUCTION_START) {
-    return 0;
-  }
-  
-  // If production is complete (after last slot end - 5:36 PM)
-  if (now >= PRODUCTION_END) {
-    return totalTarget;
-  }
-  
-  // Calculate real-time target based on time elapsed since 8:00 AM
-  const elapsedMilliseconds = now - PRODUCTION_START;
-  const totalProductionMilliseconds = PRODUCTION_END - PRODUCTION_START;
-  
-  // Simple proportional calculation based on time
-  if (totalProductionMilliseconds > 0) {
-    const progressRatio = elapsedMilliseconds / totalProductionMilliseconds;
-    const realTimeTarget = totalTarget * progressRatio;
-    return Math.min(Math.round(realTimeTarget * 100) / 100, totalTarget);
-  }
-  
-  return 0;
-};
-
   useEffect(() => {
     const fetchLineDetails = async () => {
       if (!lineData.length || !date) return;
@@ -167,32 +161,57 @@ const computeRealtimeTarget = (runData, selectedDate) => {
       const headers = { Authorization: `Bearer ${token}` };
       const newRunData = {};
       const newTargets = {};
-      const newEfficiencies = {}; // New object for line efficiencies
+      const newEfficiencies = {};
       
       for (const line of lineData) {
         try {
           const runsRes = await axios.get(`/api/line-runs/${line.lineNo}`, { headers });
           if (!runsRes.data.success) continue;
-          const run = runsRes.data.runs.find(r => toYMD(r.run_date) === date);
-          if (!run) continue;
           
-          const detailRes = await axios.get(`/api/get-run-data/${run.id}`, { headers });
-          if (!detailRes.data.success) continue;
+          // Get ALL runs for this line on the selected date (multiple styles possible)
+          const runsForDate = runsRes.data.runs.filter(r => toYMD(r.run_date) === date);
           
-          newRunData[line.lineNo] = detailRes.data;
-          const rt = computeRealtimeTarget(detailRes.data, date);
-          newTargets[line.lineNo] = rt;
+          if (runsForDate.length === 0) continue;
           
-          // Calculate efficiency for this line using finished garments
-          const finishedGarments = calculateFinishedGarments(detailRes.data);
-          const operatorsCount = detailRes.data.operators?.length || 0;
-          const workingHours = detailRes.data.run?.working_hours || 0;
-          const sam = detailRes.data.run?.sam_minutes || 0;
+          // Store all runs for this line
+          const lineRuns = [];
+          let totalSewed = 0;
+          let totalTarget = 0;
+          
+          for (const run of runsForDate) {
+            const detailRes = await axios.get(`/api/get-run-data/${run.id}`, { headers });
+            if (!detailRes.data.success) continue;
+            
+            lineRuns.push({
+              ...detailRes.data,
+              runId: run.id,
+              style: run.style
+            });
+            
+            const finishedGarments = calculateFinishedGarments(detailRes.data);
+            totalSewed += finishedGarments;
+            totalTarget += Number(detailRes.data.run?.target_pcs || 0);
+          }
+          
+          newRunData[line.lineNo] = lineRuns;
+          
+          // Calculate real-time target based on first run's slots (assuming same schedule)
+          if (lineRuns.length > 0) {
+            const rt = computeRealtimeTarget(lineRuns[0], date);
+            newTargets[line.lineNo] = rt;
+          } else {
+            newTargets[line.lineNo] = 0;
+          }
+          
+          // Calculate overall efficiency for the line
+          const operatorsCount = lineRuns.reduce((sum, run) => sum + (run.operators?.length || 0), 0);
+          const workingHours = lineRuns.length > 0 ? (lineRuns[0].run?.working_hours || 0) : 0;
+          const totalSAMOutput = lineRuns.reduce((sum, run) => {
+            return sum + (calculateFinishedGarments(run) * (run.run?.sam_minutes || 0));
+          }, 0);
           
           const availableMinutes = operatorsCount * workingHours * 60;
-          const totalSAMOutput = finishedGarments * sam;
           const efficiency = availableMinutes > 0 ? (totalSAMOutput / availableMinutes) * 100 : 0;
-          
           newEfficiencies[line.lineNo] = Math.round(efficiency * 100) / 100;
           
         } catch (err) {
@@ -202,7 +221,7 @@ const computeRealtimeTarget = (runData, selectedDate) => {
       
       setLineRunData(newRunData);
       setLineRealtimeTargets(newTargets);
-      setLineEfficiencies(newEfficiencies); // Set line efficiencies
+      setLineEfficiencies(newEfficiencies);
       
       const sum = Object.values(newTargets).reduce((a, b) => a + b, 0);
       setGlobalRealtimeTarget(sum);
@@ -240,7 +259,7 @@ const computeRealtimeTarget = (runData, selectedDate) => {
     fetchDashboardData(newDate);
     setLineRunData({});
     setLineRealtimeTargets({});
-    setLineEfficiencies({}); // Clear efficiencies when date changes
+    setLineEfficiencies({});
   };
 
   const formatNumber = (value) => {
@@ -280,7 +299,6 @@ const computeRealtimeTarget = (runData, selectedDate) => {
     return 'bg-gray-400';
   };
 
-  // Get efficiency dot color for line cards
   const getEfficiencyDotColor = (eff) => {
     if (eff < 60) return 'bg-red-500';
     if (eff < 80) return 'bg-yellow-500';
@@ -351,10 +369,9 @@ const computeRealtimeTarget = (runData, selectedDate) => {
           </div>
         )}
 
-        {/* Summary Cards – now 6 cards on large screens */}
+        {/* Summary Cards */}
         {!loading && summary && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-5 mb-8">
-            {/* Objetivo Total */}
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div>
@@ -365,7 +382,6 @@ const computeRealtimeTarget = (runData, selectedDate) => {
               </div>
             </div>
 
-            {/* Total Cosido */}
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div>
@@ -376,7 +392,6 @@ const computeRealtimeTarget = (runData, selectedDate) => {
               </div>
             </div>
 
-            {/* Eficiencia con indicador */}
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div className="w-full">
@@ -390,7 +405,6 @@ const computeRealtimeTarget = (runData, selectedDate) => {
               </div>
             </div>
 
-            {/* Cumplimiento con indicador */}
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div className="w-full">
@@ -409,7 +423,6 @@ const computeRealtimeTarget = (runData, selectedDate) => {
               </div>
             </div>
 
-            {/* Meta en tiempo real */}
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div>
@@ -429,9 +442,7 @@ const computeRealtimeTarget = (runData, selectedDate) => {
               </div>
             </div>
 
-            {/* Real‑time Efficiency con indicador */}
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl
-             transition-all duration-300 transform hover:-translate-y-1">
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex justify-between items-start">
                 <div className="w-full">
                   <div className="flex items-center gap-2 mb-1">
@@ -439,7 +450,7 @@ const computeRealtimeTarget = (runData, selectedDate) => {
                       globalRealtimeTarget > 0 ? (summary.totalSewed / globalRealtimeTarget) * 100 : 0,
                       'realtimeEfficiency'
                     )}`}></span>
-                    <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">Real‑time Target Acheivement</p>
+                    <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">Cumplimiento RT</p>
                   </div>
                   <p className="text-3xl font-bold text-gray-900">
                     {globalRealtimeTarget > 0
@@ -464,8 +475,7 @@ const computeRealtimeTarget = (runData, selectedDate) => {
                     {globalRealtimeTarget.toLocaleString(undefined, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
-                    })}{' '}
-                    piezas
+                    })} piezas
                   </p>
                 </div>
               </div>
@@ -473,7 +483,7 @@ const computeRealtimeTarget = (runData, selectedDate) => {
           </div>
         )}
 
-        {/* Line Performance Chart with Efficiency */}
+        {/* Line Performance Chart */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-8 border border-gray-100">
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -505,7 +515,7 @@ const computeRealtimeTarget = (runData, selectedDate) => {
                       lineNo: line.lineNo,
                       totalSewed: line.totalSewed,
                       realtimeTarget: lineRealtimeTargets[line.lineNo] || 0,
-                      efficiency: lineEfficiencies[line.lineNo] || 0 // Add efficiency to chart data
+                      efficiency: lineEfficiencies[line.lineNo] || 0
                     }))}
                     margin={{ top: 20, right: 30, left: 20, bottom: isMobile ? 70 : 40 }}
                   >
@@ -526,7 +536,6 @@ const computeRealtimeTarget = (runData, selectedDate) => {
                       tick={{ fontSize: isMobile ? 12 : 14, fill: '#4b5563' }}
                       label={{ value: 'Cantidad', angle: -90, position: 'insideLeft', fill: '#6b7280' }}
                     />
-                    {/* New YAxis for efficiency on the right */}
                     <YAxis
                       yAxisId="right"
                       orientation="right"
@@ -573,7 +582,6 @@ const computeRealtimeTarget = (runData, selectedDate) => {
                       name="Objetivo (ahora)"
                     />
 
-                    {/* New Line for efficiency */}
                     <Line
                       yAxisId="right"
                       type="monotone"
@@ -612,28 +620,31 @@ const computeRealtimeTarget = (runData, selectedDate) => {
           </div>
         )}
 
-        {/* Line Cards – with efficiency and real‑time achievement indicator */}
-        {!loading && lineData.length > 0 && (
+        {/* Line Cards - Now showing multiple styles per line */}
+        {!loading && Object.keys(lineRunData).length > 0 && (
           <div className="mt-8">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                  Detalles de Líneas de Producción
+                  Detalles de Estilos por Línea
                 </h2>
                 <p className="text-sm text-gray-500 mt-1">
-                  Haz clic en cualquier línea para ver información detallada de producción
+                  Haz clic en cualquier estilo para ver información detallada de producción
                 </p>
               </div>
               <div className="flex gap-2">
-                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium flex items-center gap-1">
+                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full 
+                text-xs font-medium flex items-center gap-1">
                   <span className="w-2 h-2 bg-green-500 rounded-full"></span>
                   En Ruta
                 </span>
-                <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-medium flex items-center gap-1">
+                <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full 
+                text-xs font-medium flex items-center gap-1">
                   <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
                   Atrasado
                 </span>
-                <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium flex items-center gap-1">
+                <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full 
+                text-xs font-medium flex items-center gap-1">
                   <span className="w-2 h-2 bg-red-500 rounded-full"></span>
                   Crítico
                 </span>
@@ -641,128 +652,136 @@ const computeRealtimeTarget = (runData, selectedDate) => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {lineData.map((line, idx) => {
-                const realtimeTarget = lineRealtimeTargets[line.lineNo] || 0;
-                const sewed = line.totalSewed || 0;
-                const variance = sewed - realtimeTarget;
-                const variancePct = realtimeTarget > 0 ? (variance / realtimeTarget) * 100 : 0;
-                const status = getLineStatus(variancePct, realtimeTarget);
-                const achievementPct = realtimeTarget > 0 ? (sewed / realtimeTarget) * 100 : 0;
-                const efficiency = lineEfficiencies[line.lineNo] || 0; // Get line efficiency
+              {Object.entries(lineRunData).map(([lineNo, runs]) => (
+                runs.map((run, idx) => {
+                  const realtimeTarget = computeRealtimeTarget(run, date);
+                  const sewed = calculateFinishedGarments(run);
+                  const variance = sewed - realtimeTarget;
+                  const variancePct = realtimeTarget > 0 ? (variance / realtimeTarget) * 100 : 0;
+                  const status = getLineStatus(variancePct, realtimeTarget);
+                  const achievementPct = realtimeTarget > 0 ? (sewed / realtimeTarget) * 100 : 0;
+                  
+                  // Calculate efficiency for this specific run
+                  const operatorsCount = run.operators?.length || 0;
+                  const workingHours = run.run?.working_hours || 0;
+                  const sam = run.run?.sam_minutes || 0;
+                  const availableMinutes = operatorsCount * workingHours * 60;
+                  const totalSAMOutput = sewed * sam;
+                  const efficiency = availableMinutes > 0 ? (totalSAMOutput / availableMinutes) * 100 : 0;
 
-                const statusColors = {
-                  red: 'border-red-500 bg-red-50',
-                  orange: 'border-orange-500 bg-orange-50',
-                  green: 'border-green-500 bg-green-50',
-                  yellow: 'border-yellow-500 bg-yellow-50',
-                  blue: 'border-blue-500 bg-blue-50',
-                  gray: 'border-gray-500 bg-gray-50'
-                };
+                  const statusColors = {
+                    red: 'border-red-500 bg-red-50',
+                    orange: 'border-orange-500 bg-orange-50',
+                    green: 'border-green-500 bg-green-50',
+                    yellow: 'border-yellow-500 bg-yellow-50',
+                    blue: 'border-blue-500 bg-blue-50',
+                    gray: 'border-gray-500 bg-gray-50'
+                  };
 
-                return (
-                  <div
-                    key={`${line.lineNo}-${idx}`}
-                    onClick={() => navigate(`/admin-dashboard?line=${line.lineNo}&date=${date}`)}
-                    onMouseEnter={() => setHoveredCard(line.lineNo)}
-                    onMouseLeave={() => setHoveredCard(null)}
-                    className={`group bg-white rounded-2xl shadow-lg 
-                      hover:shadow-2xl transition-all duration-300
-                       transform hover:-translate-y-2
+                  return (
+                    <div
+                      key={`${lineNo}-${run.runId}-${idx}`}
+                      onClick={() => navigate(`/admin-dashboard?line=${lineNo}&date=${date}&runId=${run.runId}`)}
+                      onMouseEnter={() => setHoveredCard(`${lineNo}-${run.runId}`)}
+                      onMouseLeave={() => setHoveredCard(null)}
+                      className={`group bg-white rounded-2xl shadow-lg 
+                        hover:shadow-2xl transition-all duration-300
+                        transform hover:-translate-y-2
                         cursor-pointer overflow-hidden border-2 ${
-                      hoveredCard === line.lineNo ? statusColors[status.color] : 'border-transparent'
-                    }`}
-                  >
-                    <div className="bg-gradient-to-r from-gray-900 to-gray-800 px-5 py-4">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                          <span className="text-white text-lg font-bold">Línea {line.lineNo}</span>
-                          <span className="text-xs bg-white/20 text-white px-2 py-1 rounded-full">
-                            {status.icon}
-                          </span>
-                        </div>
-                        <div className="bg-white/20 px-3 py-1 rounded-full">
-                          <span className="text-xs font-semibold text-white">{status.text}</span>
+                        hoveredCard === `${lineNo}-${run.runId}` ? statusColors[status.color] : 'border-transparent'
+                      }`}
+                    >
+                      <div className="bg-gradient-to-r from-gray-900 to-gray-800 px-5 py-4">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <span className="text-white text-lg font-bold">Línea {lineNo}</span>
+                            <span className="text-xs bg-white/20 text-white px-2 py-1 rounded-full">
+                              {run.style}
+                            </span>
+                          </div>
+                          <div className="bg-white/20 px-3 py-1 rounded-full">
+                            <span className="text-xs font-semibold text-white">{status.text}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="p-5">
-                      {/* Efficiency section at the top */}
-                      <div className="mb-4 flex items-center justify-between bg-gray-50 rounded-xl p-3">
-                        <div className="flex items-center gap-2">
-                          <span className={`w-3 h-3 rounded-full ${getEfficiencyDotColor(efficiency)}`}></span>
-                          <span className="text-sm font-medium text-gray-700">Eficiencia</span>
+                      <div className="p-5">
+                        {/* Efficiency section */}
+                        <div className="mb-4 flex items-center justify-between bg-gray-50 rounded-xl p-3">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-3 h-3 rounded-full ${getEfficiencyDotColor(efficiency)}`}></span>
+                            <span className="text-sm font-medium text-gray-700">Eficiencia</span>
+                          </div>
+                          <span className="text-lg font-bold text-gray-900">{efficiency.toFixed(1)}%</span>
                         </div>
-                        <span className="text-lg font-bold text-gray-900">{efficiency.toFixed(1)}%</span>
-                      </div>
 
-                      <div className="mb-4">
-                        <div className="flex justify-between text-xs mb-1">
-                          <span className="text-gray-600">Progreso (ahora)</span>
-                          <span className="font-semibold text-gray-900">
-                            {achievementPct.toFixed(1)}%
-                          </span>
+                        <div className="mb-4">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-gray-600">Progreso (ahora)</span>
+                            <span className="font-semibold text-gray-900">
+                              {achievementPct.toFixed(1)}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                              className={`h-2 rounded-full transition-all duration-500 ${
+                                variancePct < -15 ? 'bg-red-500' :
+                                variancePct < -5 ? 'bg-orange-500' :
+                                variancePct <= 5 ? 'bg-green-500' :
+                                variancePct <= 15 ? 'bg-yellow-500' : 'bg-blue-500'
+                              }`}
+                              style={{ width: `${Math.min(achievementPct, 100)}%` }}
+                            ></div>
+                          </div>
+
+                          <div className="flex items-center justify-between mt-2">
+                            <span className="text-xs text-gray-500">Cumplimiento RT:</span>
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                              achievementPct >= 80 ? 'bg-green-100 text-green-800' :
+                              achievementPct >= 60 ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-red-100 text-red-800'
+                            }`}>
+                              {achievementPct.toFixed(1)}%
+                            </span>
+                          </div>
                         </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full transition-all duration-500 ${
-                              variancePct < -15 ? 'bg-red-500' :
-                              variancePct < -5 ? 'bg-orange-500' :
-                              variancePct <= 5 ? 'bg-green-500' :
-                              variancePct <= 15 ? 'bg-yellow-500' : 'bg-blue-500'
+
+                        <div className="grid grid-cols-2 gap-3 mb-4">
+                          <div className="bg-gray-50 rounded-xl p-3">
+                            <p className="text-xs text-gray-500 mb-1">Objetivo (ahora)</p>
+                            <p className="text-lg font-bold text-gray-900">{formatNumber(realtimeTarget)}</p>
+                          </div>
+                          <div className="bg-gray-50 rounded-xl p-3">
+                            <p className="text-xs text-gray-500 mb-1">Cosido</p>
+                            <p className="text-lg font-bold text-gray-900">{formatNumber(sewed)}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between items-center pt-3 border-t border-gray-100">
+                          <span className="text-sm text-gray-600">Variación</span>
+                          <span
+                            className={`font-mono font-bold flex items-center gap-1 ${
+                              variance > 0 ? 'text-green-600' : variance < 0 ? 'text-red-600' : 'text-gray-600'
                             }`}
-                            style={{ width: `${Math.min(achievementPct, 100)}%` }}
-                          ></div>
-                        </div>
-
-                        {/* Real‑time achievement badge */}
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="text-xs text-gray-500">Cumplimiento RT:</span>
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                            achievementPct >= 80 ? 'bg-green-100 text-green-800' :
-                            achievementPct >= 60 ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-red-100 text-red-800'
-                          }`}>
-                            {achievementPct.toFixed(1)}%
+                          >
+                            <span className="text-lg">{variance > 0 ? '↑' : variance < 0 ? '↓' : '→'}</span>
+                            {variance > 0 ? '+' : ''}{formatNumber(variance)}
+                            <span className="text-xs ml-1">
+                              ({variancePct > 0 ? '+' : ''}{variancePct.toFixed(1)}%)
+                            </span>
                           </span>
                         </div>
-                      </div>
 
-                      <div className="grid grid-cols-2 gap-3 mb-4">
-                        <div className="bg-gray-50 rounded-xl p-3">
-                          <p className="text-xs text-gray-500 mb-1">Objetivo (ahora)</p>
-                          <p className="text-lg font-bold text-gray-900">{formatNumber(realtimeTarget)}</p>
-                        </div>
-                        <div className="bg-gray-50 rounded-xl p-3">
-                          <p className="text-xs text-gray-500 mb-1">Cosido</p>
-                          <p className="text-lg font-bold text-gray-900">{formatNumber(sewed)}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-between items-center pt-3 border-t border-gray-100">
-                        <span className="text-sm text-gray-600">Variación</span>
-                        <span
-                          className={`font-mono font-bold flex items-center gap-1 ${
-                            variance > 0 ? 'text-green-600' : variance < 0 ? 'text-red-600' : 'text-gray-600'
-                          }`}
-                        >
-                          <span className="text-lg">{variance > 0 ? '↑' : variance < 0 ? '↓' : '→'}</span>
-                          {variance > 0 ? '+' : ''}{formatNumber(variance)}
-                          <span className="text-xs ml-1">
-                            ({variancePct > 0 ? '+' : ''}{variancePct.toFixed(1)}%)
+                        <div className="mt-4 text-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                          <span className="text-xs font-medium text-gray-900 bg-gray-100 px-4 py-2 rounded-full">
+                            Haz clic para ver detalles →
                           </span>
-                        </span>
-                      </div>
-
-                      <div className="mt-4 text-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                        <span className="text-xs font-medium text-gray-900 bg-gray-100 px-4 py-2 rounded-full">
-                          Haz clic para ver detalles →
-                        </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              ))}
             </div>
           </div>
         )}
