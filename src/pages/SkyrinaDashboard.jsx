@@ -112,15 +112,12 @@ export default function SkyrinaDashboard() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [summary, setSummary] = useState(null);
   const [lineData, setLineData] = useState([]);
-  const [lineRunData, setLineRunData] = useState({});
+  const [styleRunData, setStyleRunData] = useState([]); // Array of style runs
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
   const [globalRealtimeTarget, setGlobalRealtimeTarget] = useState(0);
-  const [lineRealtimeTargets, setLineRealtimeTargets] = useState({});
-  const [lineEfficiencies, setLineEfficiencies] = useState({});
-  
   const [hoveredCard, setHoveredCard] = useState(null);
   
   // Auto-refresh state
@@ -175,56 +172,76 @@ export default function SkyrinaDashboard() {
     return () => clearInterval(timer);
   }, [autoRefresh, date]);
 
-  // Update line details when lineData or date changes
+  // Fetch all style runs for each line (one card per line-style combination)
   useEffect(() => {
-    const fetchLineDetails = async () => {
+    const fetchAllStyleRuns = async () => {
       if (!lineData.length || !date) return;
+      
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
-      const newRunData = {};
-      const newTargets = {};
-      const newEfficiencies = {};
+      const styleRunsMap = new Map(); // Use Map to prevent duplicates
+      let totalRealtimeTarget = 0;
       
       for (const line of lineData) {
         try {
           const runsRes = await axios.get(`/api/line-runs/${line.lineNo}`, { headers });
           if (!runsRes.data.success) continue;
-          const run = runsRes.data.runs.find(r => toYMD(r.run_date) === date);
-          if (!run) continue;
           
-          const detailRes = await axios.get(`/api/get-run-data/${run.id}`, { headers });
-          if (!detailRes.data.success) continue;
+          // Get ALL runs for this line on the selected date
+          const runsForDate = runsRes.data.runs.filter(r => toYMD(r.run_date) === date);
           
-          newRunData[line.lineNo] = detailRes.data;
-          const rt = computeRealtimeTarget(detailRes.data, date);
-          newTargets[line.lineNo] = rt;
-          
-          // Calculate efficiency
-          const finishedGarments = calculateFinishedGarments(detailRes.data);
-          const operatorsCount = detailRes.data.operators?.length || 0;
-          const workingHours = detailRes.data.run?.working_hours || 0;
-          const sam = detailRes.data.run?.sam_minutes || 0;
-          
-          const availableMinutes = operatorsCount * workingHours * 60;
-          const totalSAMOutput = finishedGarments * sam;
-          const efficiency = availableMinutes > 0 ? (totalSAMOutput / availableMinutes) * 100 : 0;
-          
-          newEfficiencies[line.lineNo] = Math.round(efficiency * 100) / 100;
+          for (const run of runsForDate) {
+            // Create a unique key for this line+style combination
+            const styleKey = `${line.lineNo}-${run.style}`;
+            
+            // Skip if we already have this line+style combination
+            if (styleRunsMap.has(styleKey)) continue;
+            
+            const detailRes = await axios.get(`/api/get-run-data/${run.id}`, { headers });
+            if (!detailRes.data.success) continue;
+            
+            const runData = detailRes.data;
+            const realtimeTarget = computeRealtimeTarget(runData, date);
+            const finishedGarments = calculateFinishedGarments(runData);
+            const operatorsCount = runData.operators?.length || 0;
+            const workingHours = runData.run?.working_hours || 0;
+            const sam = runData.run?.sam_minutes || 0;
+            
+            const availableMinutes = operatorsCount * workingHours * 60;
+            const totalSAMOutput = finishedGarments * sam;
+            const efficiency = availableMinutes > 0 ? (totalSAMOutput / availableMinutes) * 100 : 0;
+            
+            styleRunsMap.set(styleKey, {
+              lineNo: line.lineNo,
+              runId: run.id,
+              style: run.style,
+              targetPcs: run.target_pcs,
+              sewed: finishedGarments,
+              realtimeTarget,
+              operatorsCount,
+              efficiency: Math.round(efficiency * 100) / 100,
+              workingHours,
+              sam,
+              runData
+            });
+            
+            totalRealtimeTarget += realtimeTarget;
+          }
           
         } catch (err) {
           console.error(`Error fetching details for line ${line.lineNo}:`, err);
         }
       }
       
-      setLineRunData(newRunData);
-      setLineRealtimeTargets(newTargets);
-      setLineEfficiencies(newEfficiencies);
+      // Convert Map values to array and sort by efficiency (highest first)
+      const uniqueStyleRuns = Array.from(styleRunsMap.values());
+      uniqueStyleRuns.sort((a, b) => b.efficiency - a.efficiency);
       
-      const sum = Object.values(newTargets).reduce((a, b) => a + b, 0);
-      setGlobalRealtimeTarget(sum);
+      setStyleRunData(uniqueStyleRuns);
+      setGlobalRealtimeTarget(totalRealtimeTarget);
     };
     
-    fetchLineDetails();
+    fetchAllStyleRuns();
   }, [lineData, date]);
 
   const fetchDashboardData = async (selectedDate, isRefresh = false) => {
@@ -260,9 +277,7 @@ export default function SkyrinaDashboard() {
     const newDate = e.target.value;
     setDate(newDate);
     fetchDashboardData(newDate, false);
-    setLineRunData({});
-    setLineRealtimeTargets({});
-    setLineEfficiencies({});
+    setStyleRunData([]);
     setCountdown(300);
   };
 
@@ -289,14 +304,6 @@ export default function SkyrinaDashboard() {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit'
-    });
-  };
-
-  const getSortedLines = () => {
-    return [...lineData].sort((a, b) => {
-      const effA = lineEfficiencies[a.lineNo] || 0;
-      const effB = lineEfficiencies[b.lineNo] || 0;
-      return effB - effA;
     });
   };
 
@@ -344,8 +351,6 @@ export default function SkyrinaDashboard() {
     );
   }
 
-  const sortedLines = getSortedLines();
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col">
       <NavSkyrina 
@@ -370,7 +375,7 @@ export default function SkyrinaDashboard() {
           </div>
         )}
 
-        {/* Summary Cards - Big Screen White Theme */}
+        {/* Summary Cards */}
         {!loading && summary && (
           <div className="grid grid-cols-6 gap-4 mb-6">
             <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
@@ -386,14 +391,12 @@ export default function SkyrinaDashboard() {
               </div>
             </div>
             <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
-              
               <div className="text-center">
-                <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">Real-Time-Target-Acheivement%</p>
+                <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">RT ACHIEVEMENT</p>
                 <p className="text-4xl font-bold text-gray-900">
                   {globalRealtimeTarget > 0 ? ((summary.totalSewed / globalRealtimeTarget) * 100).toFixed(0) : '0'}%
                 </p>
               </div>
-
             </div>
             <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
               <div className="text-center">
@@ -403,13 +406,13 @@ export default function SkyrinaDashboard() {
             </div>
             <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
               <div className="text-center">
-                <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">Real-Time-Target</p>
+                <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">RT TARGET</p>
                 <p className="text-4xl font-bold text-gray-900">{formatNumber(globalRealtimeTarget)}</p>
               </div>
             </div>
             <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
               <div className="text-center">
-                <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">Efficiency (tot day)</p>
+                <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">EFFICIENCY</p>
                 <p className={`text-4xl font-bold ${getEfficiencyColor(summary.overallEfficiency)}`}>
                   {formatNumber(summary.overallEfficiency)}%
                 </p>
@@ -418,17 +421,15 @@ export default function SkyrinaDashboard() {
           </div>
         )}
 
-        {/* Line Cards - Grid for 19 lines on big screen */}
-        {!loading && sortedLines.length > 0 && (
+        {/* Style Run Cards - One card per line-style combination */}
+        {!loading && styleRunData.length > 0 && (
           <div className="grid grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
-            {sortedLines.map((line, idx) => {
-              const realtimeTarget = lineRealtimeTargets[line.lineNo] || 0;
-              const sewed = line.totalSewed || 0;
-              const variance = sewed - realtimeTarget;
-              const variancePct = realtimeTarget > 0 ? (variance / realtimeTarget) * 100 : 0;
-              const status = getLineStatus(variancePct, realtimeTarget);
-              const achievementPct = realtimeTarget > 0 ? (sewed / realtimeTarget) * 100 : 0;
-              const efficiency = lineEfficiencies[line.lineNo] || 0;
+            {styleRunData.map((run, idx) => {
+              const variance = run.sewed - run.realtimeTarget;
+              const variancePct = run.realtimeTarget > 0 ? (variance / run.realtimeTarget) * 100 : 0;
+              const status = getLineStatus(variancePct, run.realtimeTarget);
+              const achievementPct = run.realtimeTarget > 0 ? (run.sewed / run.realtimeTarget) * 100 : 0;
+              const efficiency = run.efficiency;
               const performanceLevel = getPerformanceLevel(efficiency);
 
               const statusColors = {
@@ -449,27 +450,34 @@ export default function SkyrinaDashboard() {
                 gray: 'bg-gray-50'
               };
 
+              const cardId = `${run.lineNo}-${run.style}`;
+
               return (
                 <div
-                  key={`${line.lineNo}-${idx}`}
-                  onMouseEnter={() => setHoveredCard(line.lineNo)}
+                  key={cardId}
+                  onMouseEnter={() => setHoveredCard(cardId)}
                   onMouseLeave={() => setHoveredCard(null)}
                   className={`bg-white rounded-xl shadow-lg 
                     hover:shadow-xl transition-all duration-200
                     border-l-4 ${statusColors[status.color]} 
                     border-t border-r border-b border-gray-200
-                    ${hoveredCard === line.lineNo ? 'shadow-xl scale-[1.02]' : ''}`}
+                    ${hoveredCard === cardId ? 'shadow-xl scale-[1.02]' : ''}`}
                 >
-                  {/* Header */}
-                  <div className="px-3 py-2 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-gray-50 to-white">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-lg text-gray-900">L{line.lineNo}</span>
-                      {idx === 0 && <span className="text-sm bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">🏆</span>}
-                      {idx === 1 && <span className="text-sm bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">🥈</span>}
-                      {idx === 2 && <span className="text-sm bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">🥉</span>}
+                  {/* Header with Line and Style */}
+                  <div className="px-3 py-2 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+                    <div className="flex justify-between items-center mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-lg text-gray-900">L{run.lineNo}</span>
+                        {idx === 0 && <span className="text-sm bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">🏆</span>}
+                        {idx === 1 && <span className="text-sm bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">🥈</span>}
+                        {idx === 2 && <span className="text-sm bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">🥉</span>}
+                      </div>
+                      <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBgColors[status.color]} ${statusColors[status.color].replace('border', 'text')}`}>
+                        {status.icon} {status.text}
+                      </div>
                     </div>
-                    <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBgColors[status.color]} ${statusColors[status.color].replace('border', 'text')}`}>
-                      {status.icon} {status.text}
+                    <div className="text-xs font-medium text-gray-600 truncate" title={run.style}>
+                      {run.style}
                     </div>
                   </div>
 
@@ -506,11 +514,11 @@ export default function SkyrinaDashboard() {
                     <div className="grid grid-cols-2 gap-2 mb-2">
                       <div className="bg-gray-50 rounded-lg p-2">
                         <p className="text-gray-500 text-xs mb-1">Obj</p>
-                        <p className="text-lg font-bold text-gray-900">{formatNumber(realtimeTarget)}</p>
+                        <p className="text-lg font-bold text-gray-900">{formatNumber(run.realtimeTarget)}</p>
                       </div>
                       <div className="bg-gray-50 rounded-lg p-2">
                         <p className="text-gray-500 text-xs mb-1">Cos</p>
-                        <p className="text-lg font-bold text-gray-900">{formatNumber(sewed)}</p>
+                        <p className="text-lg font-bold text-gray-900">{formatNumber(run.sewed)}</p>
                       </div>
                     </div>
 
@@ -545,7 +553,7 @@ export default function SkyrinaDashboard() {
         )}
 
         {/* No data state */}
-        {!loading && sortedLines.length === 0 && (
+        {!loading && styleRunData.length === 0 && (
           <div className="bg-white rounded-xl shadow-lg p-12 text-center">
             <p className="text-gray-500 text-2xl font-medium">
               No se encontraron datos para esta fecha
