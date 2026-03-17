@@ -442,12 +442,12 @@ export default function LineTvDashboard() {
               </div>
 
               {/* Efficiency - Very prominent */}
-              <div className="mb-8 bg-gray-50 rounded-xl p-6">
+             {/* <div className="mb-8 bg-gray-50 rounded-xl p-6">
                 <div className="flex justify-between items-center">
                   <span className="text-3xl text-gray-700 font-semibold">Eficiencia</span>
                   <span className="text-6xl font-black text-gray-900">{efficiency.toFixed(1)}%</span>
                 </div>
-              </div>
+              </div>*/}
 
               {/* Progress section */}
               <div className="mb-8">
