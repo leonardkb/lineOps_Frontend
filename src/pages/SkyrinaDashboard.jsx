@@ -482,19 +482,19 @@ export default function SkyrinaDashboard() {
                   </div>
 
                   {/* Content */}
-                  <div className="p-3">
+                   <div className="p-3">
                     {/* Efficiency */}
-                    <div className="flex items-center justify-between mb-2">
+                    {/*<div className="flex items-center justify-between mb-2">
                       <span className="text-gray-500 text-xs">Ef</span>
                       <div className={`px-2 py-0.5 rounded-full text-sm font-bold ${getEfficiencyBgColor(efficiency)} ${getEfficiencyColor(efficiency)}`}>
                         {performanceLevel.icon} {efficiency.toFixed(0)}%
                       </div>
-                    </div>
+                    </div>*/}
 
                     {/* RT Progress */}
                     <div className="mb-3">
                       <div className="flex justify-between text-xs mb-1">
-                        <span className="text-gray-500">RT</span>
+                        <span className="text-gray-500">EFF RT</span>
                         <span className="font-bold text-gray-900">{achievementPct.toFixed(0)}%</span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
