@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import MetaSummary from "./MetaSummary";
 import ViewEditOperationPlanner from "./ViewEditOperationPlanner";
 import AddOperatorModal from "./AddOperatorModal";
+import EditWorkingHoursModal from "./EditWorkingHoursModal";
 import DeleteOperatorModal from "./DeleteOperatorModal";
 
 // Helper to ensure dates are compared as YYYY-MM-DD strings
@@ -23,6 +24,8 @@ export default function SavedRunsViewer({ onBack }) {
   const [selectedRun, setSelectedRun] = useState(null);
   const [runData, setRunData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showEditWorkingHours, setShowEditWorkingHours] = useState(false);
+  const [isUpdatingWorkingHours, setIsUpdatingWorkingHours] = useState(false);
   const [message, setMessage] = useState("");
   const [activePanel, setActivePanel] = useState("select"); // select, summary, operations
   
@@ -120,6 +123,41 @@ export default function SavedRunsViewer({ onBack }) {
     // Refresh the run data to get updated operations
     if (selectedRun) {
       handleSelectRun(selectedRun);
+    }
+  };
+
+  const handleUpdateWorkingHours = async (newWorkingHours) => {
+    if (!selectedRun) return;
+
+    setIsUpdatingWorkingHours(true);
+    setMessage("");
+
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`/api/update-working-hours/${selectedRun}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ workingHours: newWorkingHours }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setMessage(`✅ Horas de trabajo actualizadas. Nueva meta: ${data.newTarget.toFixed(2)} piezas`);
+        setShowEditWorkingHours(false);
+        
+        // Refresh the run data to show updated values
+        await handleSelectRun(selectedRun);
+      } else {
+        setMessage(`❌ Error: ${data.error}`);
+      }
+    } catch (err) {
+      setMessage(`❌ Error al actualizar: ${err.message}`);
+    } finally {
+      setIsUpdatingWorkingHours(false);
     }
   };
 
@@ -285,16 +323,15 @@ export default function SavedRunsViewer({ onBack }) {
                   type="date"
                   value={filterDate}
                   onChange={(e) => setFilterDate(e.target.value)}
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm
-                   outline-none focus:ring-2 focus:ring-gray-900/10"
+                  className="w-full rounded-xl border border-gray-200 
+                  px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
                   placeholder="Filtrar por fecha"
                 />
               </div>
               {filterDate && (
                 <button
                   onClick={() => setFilterDate("")}
-                  className="rounded-xl border border-gray-200 bg-white 
-                  px-4 py-2 text-sm hover:bg-gray-50"
+                  className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm hover:bg-gray-50"
                 >
                   Limpiar filtro
                 </button>
@@ -315,8 +352,8 @@ export default function SavedRunsViewer({ onBack }) {
                 {filteredRuns.map((run) => (
                   <div
                     key={run.id}
-                    className="rounded-xl border border-gray-200 p-4 hover:border-gray-300 
-                    hover:bg-gray-50 cursor-pointer transition flex flex-col h-full"
+                    className="rounded-xl border border-gray-200 p-4 
+                    hover:border-gray-300 hover:bg-gray-50 cursor-pointer transition flex flex-col h-full"
                     onClick={() => handleSelectRun(run.id)}
                   >
                     <div className="flex-grow">
@@ -371,8 +408,8 @@ export default function SavedRunsViewer({ onBack }) {
                 type="date"
                 value={newDate}
                 onChange={(e) => setNewDate(e.target.value)}
-                className="mt-1 block w-full rounded-xl border border-gray-200 px-3 py-2 
-                text-sm focus:ring-2 focus:ring-gray-900/10"
+                className="mt-1 block w-full rounded-xl 
+                border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-gray-900/10"
               />
             </label>
             <div className="flex justify-end gap-3">
@@ -385,8 +422,7 @@ export default function SavedRunsViewer({ onBack }) {
               <button
                 onClick={handleCopyRun}
                 disabled={!newDate || copyLoading}
-                className="px-4 py-2 text-sm bg-gray-900 text-white rounded-xl 
-                hover:bg-gray-800 disabled:opacity-50"
+                className="px-4 py-2 text-sm bg-gray-900 text-white rounded-xl hover:bg-gray-800 disabled:opacity-50"
               >
                 {copyLoading ? "Copiando..." : "Copiar"}
               </button>
@@ -412,7 +448,16 @@ export default function SavedRunsViewer({ onBack }) {
                 </div>
                 <div className="mt-2 flex flex-wrap gap-3 text-sm text-gray-600">
                   <span>Operadores: {runData.run.operators_count}</span>
-                  <span>Horas trabajadas: {runData.run.working_hours}</span>
+                  <span className="flex items-center gap-1">
+                    Horas trabajadas: {runData.run.working_hours}
+                    <button
+                      onClick={() => setShowEditWorkingHours(true)}
+                      className="ml-1 text-blue-600 hover:text-blue-800"
+                      title="Editar horas de trabajo"
+                    >
+                      ✎
+                    </button>
+                  </span>
                   <span>SAM: {runData.run.sam_minutes} min</span>
                   <span>Eficiencia: {Math.round(runData.run.efficiency * 100)}%</span>
                 </div>
@@ -567,13 +612,13 @@ export default function SavedRunsViewer({ onBack }) {
 
       {/* Add Operator Modal */}
       {showAddOperator && selectedRun && (
-  <AddOperatorModal
-    runId={selectedRun}
-    slots={getSlotsFromData()}  // Add this line
-    onClose={() => setShowAddOperator(false)}
-    onOperatorAdded={handleOperatorAdded}
-  />
-)}
+        <AddOperatorModal
+          runId={selectedRun}
+          slots={getSlotsFromData()}
+          onClose={() => setShowAddOperator(false)}
+          onOperatorAdded={handleOperatorAdded}
+        />
+      )}
 
       {/* Delete Operator Modal */}
       {operatorToDelete && (
@@ -583,6 +628,15 @@ export default function SavedRunsViewer({ onBack }) {
           onOperatorDeleted={handleOperatorDeleted}
         />
       )}
+
+      {/* Edit Working Hours Modal */}
+      <EditWorkingHoursModal
+        isOpen={showEditWorkingHours}
+        onClose={() => setShowEditWorkingHours(false)}
+        currentWorkingHours={runData?.run?.working_hours}
+        onSave={handleUpdateWorkingHours}
+        isSaving={isUpdatingWorkingHours}
+      />
     </div>
   );
 }
