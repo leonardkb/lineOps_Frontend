@@ -470,7 +470,7 @@ export default function LineTvDashboard() {
 
               {/* Real-time achievement badge - Prominent */}
               <div className="flex justify-between items-center mb-8 bg-gray-50 rounded-xl p-6">
-                <span className="text-3xl text-gray-700 font-semibold">Cumplimiento RT:</span>
+                <span className="text-3xl text-gray-700 font-semibold">EFF RT:</span>
                 <span className={`text-5xl font-black ${
                   achievementPct >= 80 ? 'text-green-600' :
                   achievementPct >= 60 ? 'text-yellow-600' : 'text-red-600'
