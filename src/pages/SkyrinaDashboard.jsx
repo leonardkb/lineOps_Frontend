@@ -528,7 +528,7 @@ export default function SkyrinaDashboard() {
             {/* 5. Diario Eff */}
             <div className="bg-white rounded-lg shadow p-3 border border-gray-200">
               <div className="text-center">
-                <div className="text-blue-900 text-xs font-bold mb-1">DIARIO</div>
+                <div className="text-blue-900 text-xs font-bold mb-1">DIARIO EFF</div>
                 <div className={`text-2xl font-bold ${getEfficiencyColor(summary.overallEfficiency)}`}>
                   {formatNumber(summary.overallEfficiency)}%
                 </div>
