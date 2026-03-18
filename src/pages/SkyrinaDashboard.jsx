@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import NavSkyrina from '../components/NavSkyrina';
 
-{/*const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";*/}
 
 function toYMD(d) {
   if (!d) return "";
@@ -17,7 +16,7 @@ function toYMD(d) {
 const calculateFinishedGarments = (runData) => {
   if (!runData) return 0;
   let total = 0;
-  const packingKeywords = ['pack', 'emp', 'empaque', 'packing', 'finished'];
+  const packingKeywords = ['pack', 'emp', 'empaque', 'packing', 'finished', 'terminado'];
   
   for (const block of runData.operations || []) {
     for (const op of block.operations || []) {
@@ -31,6 +30,73 @@ const calculateFinishedGarments = (runData) => {
     }
   }
   return total;
+};
+
+// Helper function to calculate real-time efficiency
+const calculateRealtimeEfficiency = (runData, selectedDate) => {
+  if (!runData || !selectedDate) return 0;
+  
+  const now = new Date();
+  const todayStr = selectedDate;
+  
+  // Production timeline: 8:00 AM start
+  const PRODUCTION_START = new Date(`${todayStr}T08:00:00`);
+  
+  // Get the last slot end time
+  const slots = (runData.slots || [])
+    .map(slot => {
+      const end = new Date(`${todayStr}T${slot.slot_end}`);
+      return { ...slot, end };
+    })
+    .filter(s => s.end);
+  
+  // Find the latest end time from slots
+  const PRODUCTION_END = slots.length > 0 
+    ? new Date(Math.max(...slots.map(s => s.end.getTime())))
+    : new Date(`${todayStr}T17:36:00`);
+  
+  // If production hasn't started yet
+  if (now < PRODUCTION_START) {
+    return 0;
+  }
+  
+  // If production has ended for the day
+  if (now >= PRODUCTION_END) {
+    // Calculate full day efficiency using total production
+    const sewed = calculateFinishedGarments(runData);
+    const totalSAMOutput = sewed * (runData.run?.sam_minutes || 0);
+    const totalAvailableMinutes = (runData.operators?.length || 0) * 
+                                  (runData.run?.working_hours || 0) * 60;
+    
+    return totalAvailableMinutes > 0 
+      ? (totalSAMOutput / totalAvailableMinutes) * 100 
+      : 0;
+  }
+  
+  // Calculate elapsed time in minutes
+  const elapsedMilliseconds = now - PRODUCTION_START;
+  const elapsedMinutes = elapsedMilliseconds / (1000 * 60);
+  
+  // Get actual working hours so far (in minutes)
+  const actualWorkingMinutes = Math.min(
+    elapsedMinutes,
+    (PRODUCTION_END - PRODUCTION_START) / (1000 * 60)
+  );
+  
+  // Calculate SAM produced so far (only from packing operations)
+  const sewedSoFar = calculateFinishedGarments(runData);
+  const samProducedSoFar = sewedSoFar * (runData.run?.sam_minutes || 0);
+  
+  // Calculate available minutes so far (operators * actual time elapsed)
+  const operatorsCount = runData.operators?.length || 0;
+  const availableMinutesSoFar = operatorsCount * actualWorkingMinutes;
+  
+  // Calculate real-time efficiency
+  const realtimeEfficiency = availableMinutesSoFar > 0 
+    ? (samProducedSoFar / availableMinutesSoFar) * 100 
+    : 0;
+  
+  return Math.round(realtimeEfficiency * 100) / 100;
 };
 
 const computeRealtimeTarget = (runData, selectedDate) => {
@@ -52,26 +118,6 @@ const computeRealtimeTarget = (runData, selectedDate) => {
     ? new Date(Math.max(...slots.map(s => s.end.getTime())))
     : new Date(`${todayStr}T17:36:00`);
   
-  const slotsWithTargets = (runData.slots || [])
-    .map(slot => {
-      const start = new Date(`${todayStr}T${slot.slot_start}`);
-      const end = new Date(`${todayStr}T${slot.slot_end}`);
-      
-      const slotTarget = (runData.slotTargets || []).find(
-        st => st.slot_label === slot.slot_label
-      )?.slot_target || 0;
-      
-      return { 
-        ...slot, 
-        start, 
-        end,
-        target: Number(slotTarget)
-      };
-    })
-    .filter(s => s.start && s.end);
-  
-  if (slotsWithTargets.length === 0) return 0;
-  
   const totalTarget = runData.run?.target_pcs || 0;
   
   if (now < PRODUCTION_START) return 0;
@@ -89,20 +135,22 @@ const computeRealtimeTarget = (runData, selectedDate) => {
   return 0;
 };
 
-// Performance level definitions
+// Performance level definitions with new color scheme
 const PERFORMANCE_LEVELS = {
-  EXCELLENT: { name: 'Excelente', threshold: 90, icon: '👑' },
-  GOOD: { name: 'Bueno', threshold: 75, icon: '📈' },
-  MEDIUM: { name: 'Medio', threshold: 60, icon: '📊' },
-  LOW: { name: 'Bajo', threshold: 40, icon: '📉' },
-  CRITICAL: { name: 'Crítico', threshold: 0, icon: '🆘' }
+  EXCELLENT: { name: 'Excelente', threshold: 90, icon: '👑', color: 'text-green-800', bg: 'bg-green-200' },
+  GOOD: { name: 'Muy Bueno', threshold: 80, icon: '🟢', color: 'text-green-600', bg: 'bg-green-100' },
+  MEDIUM: { name: 'Bueno', threshold: 70, icon: '🟢', color: 'text-lime-600', bg: 'bg-lime-100' },
+  LOW: { name: 'Medio', threshold: 60, icon: '🟡', color: 'text-yellow-600', bg: 'bg-yellow-100' },
+  VERY_LOW: { name: 'Bajo', threshold: 40, icon: '🟠', color: 'text-orange-600', bg: 'bg-orange-100' },
+  CRITICAL: { name: 'Crítico', threshold: 0, icon: '🔴', color: 'text-red-600', bg: 'bg-red-100' }
 };
 
 const getPerformanceLevel = (efficiency) => {
   if (efficiency >= 90) return PERFORMANCE_LEVELS.EXCELLENT;
-  if (efficiency >= 75) return PERFORMANCE_LEVELS.GOOD;
-  if (efficiency >= 60) return PERFORMANCE_LEVELS.MEDIUM;
-  if (efficiency >= 40) return PERFORMANCE_LEVELS.LOW;
+  if (efficiency >= 80) return PERFORMANCE_LEVELS.GOOD;
+  if (efficiency >= 70) return PERFORMANCE_LEVELS.MEDIUM;
+  if (efficiency >= 60) return PERFORMANCE_LEVELS.LOW;
+  if (efficiency >= 40) return PERFORMANCE_LEVELS.VERY_LOW;
   return PERFORMANCE_LEVELS.CRITICAL;
 };
 
@@ -118,6 +166,7 @@ export default function SkyrinaDashboard() {
   const [error, setError] = useState('');
   
   const [globalRealtimeTarget, setGlobalRealtimeTarget] = useState(0);
+  const [globalRealtimeEfficiency, setGlobalRealtimeEfficiency] = useState(0);
   const [hoveredCard, setHoveredCard] = useState(null);
   
   // Auto-refresh state
@@ -181,6 +230,8 @@ export default function SkyrinaDashboard() {
       const headers = { Authorization: `Bearer ${token}` };
       const styleRunsMap = new Map(); // Use Map to prevent duplicates
       let totalRealtimeTarget = 0;
+      let totalWeightedEff = 0;
+      let totalTargets = 0;
       
       for (const line of lineData) {
         try {
@@ -207,6 +258,9 @@ export default function SkyrinaDashboard() {
             const workingHours = runData.run?.working_hours || 0;
             const sam = runData.run?.sam_minutes || 0;
             
+            // Calculate real-time efficiency
+            const realtimeEff = calculateRealtimeEfficiency(runData, date);
+            
             const availableMinutes = operatorsCount * workingHours * 60;
             const totalSAMOutput = finishedGarments * sam;
             const efficiency = availableMinutes > 0 ? (totalSAMOutput / availableMinutes) * 100 : 0;
@@ -218,6 +272,7 @@ export default function SkyrinaDashboard() {
               targetPcs: run.target_pcs,
               sewed: finishedGarments,
               realtimeTarget,
+              realtimeEfficiency: realtimeEff,
               operatorsCount,
               efficiency: Math.round(efficiency * 100) / 100,
               workingHours,
@@ -226,12 +281,22 @@ export default function SkyrinaDashboard() {
             });
             
             totalRealtimeTarget += realtimeTarget;
+            
+            // For weighted average of real-time efficiency
+            if (realtimeTarget > 0) {
+              totalWeightedEff += realtimeEff * realtimeTarget;
+              totalTargets += realtimeTarget;
+            }
           }
           
         } catch (err) {
           console.error(`Error fetching details for line ${line.lineNo}:`, err);
         }
       }
+      
+      // Calculate global real-time efficiency (weighted average)
+      const globalEff = totalTargets > 0 ? totalWeightedEff / totalTargets : 0;
+      setGlobalRealtimeEfficiency(Math.round(globalEff * 100) / 100);
       
       // Convert Map values to array and sort by efficiency (highest first)
       const uniqueStyleRuns = Array.from(styleRunsMap.values());
@@ -242,6 +307,10 @@ export default function SkyrinaDashboard() {
     };
     
     fetchAllStyleRuns();
+    
+    // Update every minute for real-time data
+    const interval = setInterval(fetchAllStyleRuns, 60000);
+    return () => clearInterval(interval);
   }, [lineData, date]);
 
   const fetchDashboardData = async (selectedDate, isRefresh = false) => {
@@ -315,29 +384,95 @@ export default function SkyrinaDashboard() {
     });
   };
 
-  const getLineStatus = (variancePct, target) => {
-    if (target === 0) return { color: 'gray', icon: '⏸️', text: 'Sin Objetivo' };
-    if (variancePct < -15) return { color: 'red', icon: '🔴', text: 'Crítico' };
-    if (variancePct < -5) return { color: 'orange', icon: '🟠', text: 'Atrasado' };
-    if (variancePct <= 5) return { color: 'green', icon: '🟢', text: 'En Ruta' };
-    if (variancePct <= 15) return { color: 'yellow', icon: '🟡', text: 'Adelantado' };
-    return { color: 'blue', icon: '🔵', text: 'Superando' };
+  const formatDecimal = (value) => {
+    if (value == null) return '0';
+    return Number(value).toLocaleString(undefined, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1
+    });
   };
 
+  // Updated getLineStatus based on real-time efficiency
+  const getLineStatus = (efficiency) => {
+    if (efficiency === 0) return { color: 'gray', icon: '⏸️', text: 'Sin Datos' };
+    if (efficiency < 60) return { color: 'red', icon: '🔴', text: 'Crítico' };
+    if (efficiency < 70) return { color: 'orange', icon: '🟠', text: 'Atrasado' };
+    if (efficiency < 80) return { color: 'yellow', icon: '🟡', text: 'A Tiempo' };
+    if (efficiency < 90) return { color: 'lime', icon: '🟢', text: '💪🏻' };
+    return { color: 'green', icon: '🟢', text: '💪🏻💪🏻💪🏻' };
+  };
+
+  // Color functions with the requested scheme
   const getEfficiencyColor = (eff) => {
-    if (eff < 40) return 'text-red-600';
-    if (eff < 60) return 'text-orange-600';
-    if (eff < 75) return 'text-yellow-600';
-    if (eff < 90) return 'text-blue-600';
-    return 'text-green-600';
+    if (eff >= 90) return 'text-green-800';
+    if (eff >= 80) return 'text-green-600';
+    if (eff >= 70) return 'text-lime-600';
+    if (eff >= 60) return 'text-yellow-600';
+    if (eff >= 40) return 'text-orange-600';
+    return 'text-red-600';
   };
 
   const getEfficiencyBgColor = (eff) => {
-    if (eff < 40) return 'bg-red-100';
-    if (eff < 60) return 'bg-orange-100';
-    if (eff < 75) return 'bg-yellow-100';
-    if (eff < 90) return 'bg-blue-100';
-    return 'bg-green-100';
+    if (eff >= 90) return 'bg-green-200';
+    if (eff >= 80) return 'bg-green-100';
+    if (eff >= 70) return 'bg-lime-100';
+    if (eff >= 60) return 'bg-yellow-100';
+    if (eff >= 40) return 'bg-orange-100';
+    return 'bg-red-100';
+  };
+
+  // Same color scheme for real-time efficiency
+  const getRealtimeEfficiencyColor = (eff) => {
+    if (eff >= 90) return 'text-green-800';
+    if (eff >= 80) return 'text-green-600';
+    if (eff >= 70) return 'text-lime-600';
+    if (eff >= 60) return 'text-yellow-600';
+    if (eff >= 40) return 'text-orange-600';
+    return 'text-red-600';
+  };
+
+  const getRealtimeEfficiencyBgColor = (eff) => {
+    if (eff >= 90) return 'bg-green-200';
+    if (eff >= 80) return 'bg-green-100';
+    if (eff >= 70) return 'bg-lime-100';
+    if (eff >= 60) return 'bg-yellow-100';
+    if (eff >= 40) return 'bg-orange-100';
+    return 'bg-red-100';
+  };
+
+  const getProgressBarColor = (eff) => {
+    if (eff >= 90) return 'bg-green-800';
+    if (eff >= 80) return 'bg-green-600';
+    if (eff >= 70) return 'bg-lime-600';
+    if (eff >= 60) return 'bg-yellow-600';
+    if (eff >= 40) return 'bg-orange-600';
+    return 'bg-red-600';
+  };
+
+  const getStatusColor = (color) => {
+    const colorMap = {
+      gray: 'border-gray-500',
+      red: 'border-red-500',
+      orange: 'border-orange-500',
+      yellow: 'border-yellow-500',
+      lime: 'border-lime-500',
+      green: 'border-green-500',
+      emerald: 'border-emerald-500'
+    };
+    return colorMap[color] || 'border-gray-500';
+  };
+
+  const getStatusBgColor = (color) => {
+    const colorMap = {
+      gray: 'bg-gray-50',
+      red: 'bg-red-50',
+      orange: 'bg-orange-50',
+      yellow: 'bg-yellow-50',
+      lime: 'bg-lime-50',
+      green: 'bg-green-50',
+      emerald: 'bg-emerald-50'
+    };
+    return colorMap[color] || 'bg-gray-50';
   };
 
   if (!user) {
@@ -375,47 +510,71 @@ export default function SkyrinaDashboard() {
           </div>
         )}
 
-        {/* Summary Cards */}
+        {/* Summary Cards - Reordered */}
         {!loading && summary && (
           <div className="grid grid-cols-6 gap-4 mb-6">
+            {/* 1. Meta (Target) */}
             <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
               <div className="text-center">
                 <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">META</p>
                 <p className="text-4xl font-bold text-gray-900">{formatNumber(summary.totalTarget)}</p>
               </div>
             </div>
+
+            {/* 2. Meta en tiempo real (RT Target) */}
+            <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
+              <div className="text-center">
+                <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">META RT</p>
+                <p className="text-4xl font-bold text-gray-900">{formatNumber(globalRealtimeTarget)}</p>
+                <p className="text-xs text-gray-500 mt-1">{summary.totalTarget > 0 ? ((globalRealtimeTarget / summary.totalTarget) * 100).toFixed(1) : 0}% del total</p>
+              </div>
+            </div>
+
+            {/* 3. Tot Producido (Total Sewn) */}
             <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
               <div className="text-center">
                 <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">TOT PRODUCIDO</p>
                 <p className="text-4xl font-bold text-gray-900">{formatNumber(summary.totalSewed)}</p>
               </div>
             </div>
+
+            {/* 4. Eficiencia RT (Real-time Efficiency) */}
             <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
               <div className="text-center">
-                <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">RT ACHIEVEMENT</p>
-                <p className="text-4xl font-bold text-gray-900">
-                  {globalRealtimeTarget > 0 ? ((summary.totalSewed / globalRealtimeTarget) * 100).toFixed(0) : '0'}%
+                <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">EFICIENCIA RT</p>
+                <p className={`text-4xl font-bold ${getRealtimeEfficiencyColor(globalRealtimeEfficiency)}`}>
+                  {formatDecimal(globalRealtimeEfficiency)}%
                 </p>
+                <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
+                  <div
+                    className={`h-1.5 rounded-full transition-all duration-500 ${getProgressBarColor(globalRealtimeEfficiency)}`}
+                    style={{ width: `${Math.min(globalRealtimeEfficiency, 100)}%` }}
+                  ></div>
+                </div>
               </div>
             </div>
+
+            {/* 5. Diario Eff (Daily Efficiency) */}
             <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
               <div className="text-center">
-                <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">CMP</p>
-                <p className="text-4xl font-bold text-gray-900">{formatNumber(summary.targetAchievement)}%</p>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
-              <div className="text-center">
-                <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">RT TARGET</p>
-                <p className="text-4xl font-bold text-gray-900">{formatNumber(globalRealtimeTarget)}</p>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
-              <div className="text-center">
-                <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">EFFICIENCY</p>
+                <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">DIARIO EFF</p>
                 <p className={`text-4xl font-bold ${getEfficiencyColor(summary.overallEfficiency)}`}>
                   {formatNumber(summary.overallEfficiency)}%
                 </p>
+              </div>
+            </div>
+
+            {/* 6. Cump (Achievement) */}
+            <div className="bg-white rounded-xl shadow-lg p-5 border border-gray-100">
+              <div className="text-center">
+                <p className="text-blue-900 text-xs uppercase tracking-wider font-bold mb-1">CUMP</p>
+                <p className="text-4xl font-bold text-gray-900">{formatNumber(summary.targetAchievement)}%</p>
+                <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
+                  <div
+                    className="bg-gray-900 h-1.5 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(summary.targetAchievement || 0, 100)}%` }}
+                  ></div>
+                </div>
               </div>
             </div>
           </div>
@@ -425,31 +584,8 @@ export default function SkyrinaDashboard() {
         {!loading && styleRunData.length > 0 && (
           <div className="grid grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
             {styleRunData.map((run, idx) => {
-              const variance = run.sewed - run.realtimeTarget;
-              const variancePct = run.realtimeTarget > 0 ? (variance / run.realtimeTarget) * 100 : 0;
-              const status = getLineStatus(variancePct, run.realtimeTarget);
-              const achievementPct = run.realtimeTarget > 0 ? (run.sewed / run.realtimeTarget) * 100 : 0;
-              const efficiency = run.efficiency;
-              const performanceLevel = getPerformanceLevel(efficiency);
-
-              const statusColors = {
-                red: 'border-red-500',
-                orange: 'border-orange-500',
-                green: 'border-green-500',
-                yellow: 'border-yellow-500',
-                blue: 'border-blue-500',
-                gray: 'border-gray-500'
-              };
-
-              const statusBgColors = {
-                red: 'bg-red-50',
-                orange: 'bg-orange-50',
-                green: 'bg-green-50',
-                yellow: 'bg-yellow-50',
-                blue: 'bg-blue-50',
-                gray: 'bg-gray-50'
-              };
-
+              const realtimeEff = run.realtimeEfficiency;
+              const status = getLineStatus(realtimeEff);
               const cardId = `${run.lineNo}-${run.style}`;
 
               return (
@@ -459,7 +595,7 @@ export default function SkyrinaDashboard() {
                   onMouseLeave={() => setHoveredCard(null)}
                   className={`bg-white rounded-xl shadow-lg 
                     hover:shadow-xl transition-all duration-200
-                    border-l-4 ${statusColors[status.color]} 
+                    border-l-4 ${getStatusColor(status.color)} 
                     border-t border-r border-b border-gray-200
                     ${hoveredCard === cardId ? 'shadow-xl scale-[1.02]' : ''}`}
                 >
@@ -472,7 +608,7 @@ export default function SkyrinaDashboard() {
                         {idx === 1 && <span className="text-sm bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">🥈</span>}
                         {idx === 2 && <span className="text-sm bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">🥉</span>}
                       </div>
-                      <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBgColors[status.color]} ${statusColors[status.color].replace('border', 'text')}`}>
+                      <div className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBgColor(status.color)}`}>
                         {status.icon} {status.text}
                       </div>
                     </div>
@@ -482,30 +618,19 @@ export default function SkyrinaDashboard() {
                   </div>
 
                   {/* Content */}
-                   <div className="p-3">
-                    {/* Efficiency */}
-                    {/*<div className="flex items-center justify-between mb-2">
-                      <span className="text-gray-500 text-xs">Ef</span>
-                      <div className={`px-2 py-0.5 rounded-full text-sm font-bold ${getEfficiencyBgColor(efficiency)} ${getEfficiencyColor(efficiency)}`}>
-                        {performanceLevel.icon} {efficiency.toFixed(0)}%
+                  <div className="p-3">
+                    {/* Eff RT Section - Prominent Display */}
+                    <div className="mb-3 text-center">
+                      <p className="text-gray-500 text-xs mb-1">EFICIENCIA RT</p>
+                      <div className={`inline-block px-4 py-2 rounded-lg ${getRealtimeEfficiencyBgColor(realtimeEff)}`}>
+                        <span className={`text-2xl font-bold ${getRealtimeEfficiencyColor(realtimeEff)}`}>
+                          {realtimeEff.toFixed(1)}%
+                        </span>
                       </div>
-                    </div>*/}
-
-                    {/* RT Progress */}
-                    <div className="mb-3">
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-gray-500">EFF RT</span>
-                        <span className="font-bold text-gray-900">{achievementPct.toFixed(0)}%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
                         <div
-                          className={`h-2 rounded-full transition-all duration-300 ${
-                            variancePct < -15 ? 'bg-red-500' :
-                            variancePct < -5 ? 'bg-orange-500' :
-                            variancePct <= 5 ? 'bg-green-500' :
-                            variancePct <= 15 ? 'bg-yellow-500' : 'bg-blue-500'
-                          }`}
-                          style={{ width: `${Math.min(achievementPct, 100)}%` }}
+                          className={`h-2 rounded-full transition-all duration-500 ${getProgressBarColor(realtimeEff)}`}
+                          style={{ width: `${Math.min(realtimeEff, 100)}%` }}
                         ></div>
                       </div>
                     </div>
@@ -513,11 +638,11 @@ export default function SkyrinaDashboard() {
                     {/* Stats Grid */}
                     <div className="grid grid-cols-2 gap-2 mb-2">
                       <div className="bg-gray-50 rounded-lg p-2">
-                        <p className="text-gray-500 text-xs mb-1">Obj</p>
+                        <p className="text-gray-500 text-xs mb-1">Obj RT</p>
                         <p className="text-lg font-bold text-gray-900">{formatNumber(run.realtimeTarget)}</p>
                       </div>
                       <div className="bg-gray-50 rounded-lg p-2">
-                        <p className="text-gray-500 text-xs mb-1">Cos</p>
+                        <p className="text-gray-500 text-xs mb-1">Cosido</p>
                         <p className="text-lg font-bold text-gray-900">{formatNumber(run.sewed)}</p>
                       </div>
                     </div>
@@ -526,12 +651,12 @@ export default function SkyrinaDashboard() {
                     <div className="flex justify-between items-center pt-2 border-t border-gray-100">
                       <span className="text-gray-500 text-sm">Var</span>
                       <span className={`font-mono font-bold flex items-center gap-1 text-lg ${
-                        variance > 0 ? 'text-green-600' : variance < 0 ? 'text-red-600' : 'text-gray-600'
+                        run.sewed > run.realtimeTarget ? 'text-green-600' : run.sewed < run.realtimeTarget ? 'text-red-600' : 'text-gray-600'
                       }`}>
-                        {variance > 0 ? '↑' : variance < 0 ? '↓' : '→'}
-                        {variance > 0 ? '+' : ''}{formatNumber(variance)}
+                        {run.sewed > run.realtimeTarget ? '↑' : run.sewed < run.realtimeTarget ? '↓' : '→'}
+                        {run.sewed > run.realtimeTarget ? '+' : ''}{formatNumber(Math.abs(run.sewed - run.realtimeTarget))}
                         <span className="text-xs opacity-75">
-                          ({variancePct > 0 ? '+' : ''}{variancePct.toFixed(0)}%)
+                          ({run.realtimeTarget > 0 ? ((run.sewed - run.realtimeTarget) / run.realtimeTarget * 100).toFixed(0) : 0}%)
                         </span>
                       </span>
                     </div>
