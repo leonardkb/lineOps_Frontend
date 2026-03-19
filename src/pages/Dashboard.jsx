@@ -205,99 +205,115 @@ export default function Dashboard() {
 
   useEffect(() => {
     const fetchLineDetails = async () => {
-      if (!lineData.length || !date) return;
-      const token = localStorage.getItem('token');
-      const headers = { Authorization: `Bearer ${token}` };
-      const newRunData = {};
-      const newTargets = {};
-      const newEfficiencies = {};
-      const newRealtimeEfficiencies = {};
+  if (!lineData.length || !date) return;
+  const token = localStorage.getItem('token');
+  const headers = { Authorization: `Bearer ${token}` };
+  const newRunData = {};
+  const newTargets = {};
+  const newEfficiencies = {};
+  const newRealtimeEfficiencies = {};
+  
+  // For global calculation - matching Skyrina's approach
+  let globalWeightedEff = 0;
+  let globalTargets = 0;
+  
+  for (const line of lineData) {
+    try {
+      const runsRes = await axios.get(`${API_BASE}/api/line-runs/${line.lineNo}`, { headers });
+      if (!runsRes.data.success) continue;
+        
+      // DEBUG: Log what we get from API
+      console.log(`Runs for line ${line.lineNo} on date ${date}:`, runsRes.data.runs);
       
-      for (const line of lineData) {
-        try {
-          const runsRes = await axios.get(`/api/line-runs/${line.lineNo}`, { headers });
-          if (!runsRes.data.success) continue;
-          
-          // Get ALL runs for this line on the selected date (multiple styles possible)
-          const runsForDate = runsRes.data.runs.filter(r => toYMD(r.run_date) === date);
-          
-          if (runsForDate.length === 0) continue;
-          
-          // Store all runs for this line
-          const lineRuns = [];
-          let totalSewed = 0;
-          let totalTarget = 0;
-          let totalRealtimeEff = 0;
-          
-          for (const run of runsForDate) {
-            const detailRes = await axios.get(`/api/get-run-data/${run.id}`, { headers });
-            if (!detailRes.data.success) continue;
-            
-            lineRuns.push({
-              ...detailRes.data,
-              runId: run.id,
-              style: run.style
-            });
-            
-            const finishedGarments = calculateFinishedGarments(detailRes.data);
-            totalSewed += finishedGarments;
-            totalTarget += Number(detailRes.data.run?.target_pcs || 0);
-            
-            // Calculate real-time efficiency for this run
-            const rtEff = calculateRealtimeEfficiency(detailRes.data, date);
-            totalRealtimeEff += rtEff;
-          }
-          
-          newRunData[line.lineNo] = lineRuns;
-          
-          // Calculate real-time target based on first run's slots (assuming same schedule)
-          if (lineRuns.length > 0) {
-            const rt = computeRealtimeTarget(lineRuns[0], date);
-            newTargets[line.lineNo] = rt;
-            
-            // Average real-time efficiency across all runs on this line
-            newRealtimeEfficiencies[line.lineNo] = Math.round((totalRealtimeEff / lineRuns.length) * 100) / 100;
-          } else {
-            newTargets[line.lineNo] = 0;
-            newRealtimeEfficiencies[line.lineNo] = 0;
-          }
-          
-          // Calculate overall efficiency for the line
-          const operatorsCount = lineRuns.reduce((sum, run) => sum + (run.operators?.length || 0), 0);
-          const workingHours = lineRuns.length > 0 ? (lineRuns[0].run?.working_hours || 0) : 0;
-          const totalSAMOutput = lineRuns.reduce((sum, run) => {
-            return sum + (calculateFinishedGarments(run) * (run.run?.sam_minutes || 0));
-          }, 0);
-          
-          const availableMinutes = operatorsCount * workingHours * 60;
-          const efficiency = availableMinutes > 0 ? (totalSAMOutput / availableMinutes) * 100 : 0;
-          newEfficiencies[line.lineNo] = Math.round(efficiency * 100) / 100;
-          
-        } catch (err) {
-          console.error(`Error fetching details for line ${line.lineNo}:`, err);
+      // Get ALL runs for this line on the selected date (multiple styles possible)
+      const runsForDate = runsRes.data.runs.filter(r => toYMD(r.run_date) === date);
+      console.log(`Filtered runs for line ${line.lineNo}:`, runsForDate);
+
+      if (runsForDate.length === 0) continue;
+  
+      // Store all runs for this line
+      const lineRuns = [];
+      let totalSewed = 0;
+      let totalTarget = 0;
+      
+      // For line-level weighted calculation
+      let lineWeightedEff = 0;
+      let lineTargets = 0;
+      
+      for (const run of runsForDate) {
+        const detailRes = await axios.get(`${API_BASE}/api/get-run-data/${run.id}`, { headers });
+        if (!detailRes.data.success) continue;
+        
+        lineRuns.push({
+          ...detailRes.data,
+          runId: run.id,
+          style: run.style
+        });
+        
+        const finishedGarments = calculateFinishedGarments(detailRes.data);
+        totalSewed += finishedGarments;
+        totalTarget += Number(detailRes.data.run?.target_pcs || 0);
+        
+        // Calculate real-time efficiency and target for this run
+        const rtEff = calculateRealtimeEfficiency(detailRes.data, date);
+        const rtTarget = computeRealtimeTarget(detailRes.data, date);
+        
+        // Add to line weighted calculation
+        if (rtTarget > 0) {
+          lineWeightedEff += rtEff * rtTarget;
+          lineTargets += rtTarget;
+        }
+        
+        // Add to global weighted calculation (Skyrina approach)
+        if (rtTarget > 0) {
+          globalWeightedEff += rtEff * rtTarget;
+          globalTargets += rtTarget;
         }
       }
       
-      setLineRunData(newRunData);
-      setLineRealtimeTargets(newTargets);
-      setLineEfficiencies(newEfficiencies);
-      setLineRealtimeEfficiencies(newRealtimeEfficiencies);
+      newRunData[line.lineNo] = lineRuns;
       
-      const targetSum = Object.values(newTargets).reduce((a, b) => a + b, 0);
-      setGlobalRealtimeTarget(targetSum);
+      // Calculate real-time target based on first run's slots (assuming same schedule)
+      if (lineRuns.length > 0) {
+        const rt = computeRealtimeTarget(lineRuns[0], date);
+        newTargets[line.lineNo] = rt;
+        
+        // Calculate line real-time efficiency using weighted average (Skyrina approach)
+        const lineEff = lineTargets > 0 ? lineWeightedEff / lineTargets : 0;
+        newRealtimeEfficiencies[line.lineNo] = Math.round(lineEff * 100) / 100;
+      } else {
+        newTargets[line.lineNo] = 0;
+        newRealtimeEfficiencies[line.lineNo] = 0;
+      }
       
-      // Calculate global real-time efficiency (weighted average)
-      let totalWeightedEff = 0;
-      let totalTargets = 0;
-      Object.entries(newTargets).forEach(([lineNo, target]) => {
-        if (target > 0 && newRealtimeEfficiencies[lineNo]) {
-          totalWeightedEff += newRealtimeEfficiencies[lineNo] * target;
-          totalTargets += target;
-        }
-      });
-      const globalEff = totalTargets > 0 ? totalWeightedEff / totalTargets : 0;
-      setGlobalRealtimeEfficiency(Math.round(globalEff * 100) / 100);
-    };
+      // Calculate overall efficiency for the line
+      const operatorsCount = lineRuns.reduce((sum, run) => sum + (run.operators?.length || 0), 0);
+      const workingHours = lineRuns.length > 0 ? (lineRuns[0].run?.working_hours || 0) : 0;
+      const totalSAMOutput = lineRuns.reduce((sum, run) => {
+        return sum + (calculateFinishedGarments(run) * (run.run?.sam_minutes || 0));
+      }, 0);
+      
+      const availableMinutes = operatorsCount * workingHours * 60;
+      const efficiency = availableMinutes > 0 ? (totalSAMOutput / availableMinutes) * 100 : 0;
+      newEfficiencies[line.lineNo] = Math.round(efficiency * 100) / 100;
+      
+    } catch (err) {
+      console.error(`Error fetching details for line ${line.lineNo}:`, err);
+    }
+  }
+  
+  setLineRunData(newRunData);
+  setLineRealtimeTargets(newTargets);
+  setLineEfficiencies(newEfficiencies);
+  setLineRealtimeEfficiencies(newRealtimeEfficiencies);
+  
+  const targetSum = Object.values(newTargets).reduce((a, b) => a + b, 0);
+  setGlobalRealtimeTarget(targetSum);
+  
+  // Calculate global real-time efficiency using Skyrina's approach
+  const globalEff = globalTargets > 0 ? globalWeightedEff / globalTargets : 0;
+  setGlobalRealtimeEfficiency(Math.round(globalEff * 100) / 100);
+};
     
     fetchLineDetails();
     
