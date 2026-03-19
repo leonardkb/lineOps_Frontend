@@ -219,7 +219,7 @@ export default function Dashboard() {
   
   for (const line of lineData) {
     try {
-      const runsRes = await axios.get(`${API_BASE}/api/line-runs/${line.lineNo}`, { headers });
+      const runsRes = await axios.get(`/api/line-runs/${line.lineNo}`, { headers });
       if (!runsRes.data.success) continue;
         
       // DEBUG: Log what we get from API
@@ -241,7 +241,7 @@ export default function Dashboard() {
       let lineTargets = 0;
       
       for (const run of runsForDate) {
-        const detailRes = await axios.get(`${API_BASE}/api/get-run-data/${run.id}`, { headers });
+        const detailRes = await axios.get(`/api/get-run-data/${run.id}`, { headers });
         if (!detailRes.data.success) continue;
         
         lineRuns.push({
