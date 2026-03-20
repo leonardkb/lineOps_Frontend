@@ -5,6 +5,7 @@ import AddOperatorModal from "./AddOperatorModal";
 import EditWorkingHoursModal from "./EditWorkingHoursModal";
 import DeleteOperatorModal from "./DeleteOperatorModal";
 import EditEfficiencyModal from "./EditEfficiencyModal";
+import EditOperatorModal from "./EditOperatorModal";
 // Helper to ensure dates are compared as YYYY-MM-DD strings
 const normalizeDate = (dateStr) => {
   if (!dateStr) return "";
@@ -29,7 +30,8 @@ export default function SavedRunsViewer({ onBack }) {
   const [message, setMessage] = useState("");
   const [activePanel, setActivePanel] = useState("select"); // select, summary, operations
   const [showEditEfficiency, setShowEditEfficiency] = useState(false);
-const [isUpdatingEfficiency, setIsUpdatingEfficiency] = useState(false);
+  const [isUpdatingEfficiency, setIsUpdatingEfficiency] = useState(false);
+  const [operatorToEdit, setOperatorToEdit] = useState(null);
   
   // Operators state
   const [operators, setOperators] = useState([]);
@@ -117,7 +119,17 @@ const [isUpdatingEfficiency, setIsUpdatingEfficiency] = useState(false);
       setLoading(false);
     }
   };
-
+  // Handle operator no updated
+  const handleOperatorUpdated = (updatedOperator) => {
+  setOperators(operators.map(op => 
+    op.id === updatedOperator.id ? updatedOperator : op
+  ));
+  setMessage(`✅ Operador actualizado correctamente`);
+  // Refresh the run data to get updated operations
+  if (selectedRun) {
+    handleSelectRun(selectedRun);
+  }
+};
   // Handle operator added
   const handleOperatorAdded = (newOperator) => {
     setOperators([...operators, { ...newOperator, operations_count: 0 }]);
@@ -586,39 +598,46 @@ const [isUpdatingEfficiency, setIsUpdatingEfficiency] = useState(false);
                   {operators && operators.length > 0 ? (
                     <div className="space-y-3">
                       {operators.map((operator) => (
-                        <div key={operator.id} className="rounded-lg border border-gray-200 p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="font-semibold text-gray-900">
-                              Operador {operator.operator_no}
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <div className="text-sm text-gray-600">
-                                {operator.operations_count || 0} operaciones
-                              </div>
-                              <button
-                                onClick={() => setOperatorToDelete(operator)}
-                                className="text-sm text-red-600 hover:text-red-800"
-                                title="Eliminar operador"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          </div>
+  <div key={operator.id} className="rounded-lg border border-gray-200 p-4">
+    <div className="flex items-center justify-between mb-2">
+      <div className="font-semibold text-gray-900">
+        Operador {operator.operator_no}
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => setOperatorToEdit(operator)}
+          className="text-sm text-blue-600 hover:text-blue-800"
+          title="Editar operador"
+        >
+          ✎
+        </button>
+        <div className="text-sm text-gray-600">
+          {operator.operations_count || 0} operaciones
+        </div>
+        <button
+          onClick={() => setOperatorToDelete(operator)}
+          className="text-sm text-red-600 hover:text-red-800"
+          title="Eliminar operador"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
 
-                          {operator.operator_name && (
-                            <div className="text-sm text-gray-600 mb-3">
-                              Nombre: {operator.operator_name}
-                            </div>
-                          )}
+    {operator.operator_name && (
+      <div className="text-sm text-gray-600 mb-3">
+        Nombre: {operator.operator_name}
+      </div>
+    )}
 
-                          <button
-                            onClick={() => setActivePanel("operations")}
-                            className="text-sm text-blue-600 hover:text-blue-800"
-                          >
-                            Ver operaciones →
-                          </button>
-                        </div>
-                      ))}
+    <button
+      onClick={() => setActivePanel("operations")}
+      className="text-sm text-blue-600 hover:text-blue-800"
+    >
+      Ver operaciones →
+    </button>
+  </div>
+))}
                     </div>
                   ) : (
                     <div className="text-center py-8 text-gray-600">
@@ -693,6 +712,16 @@ const [isUpdatingEfficiency, setIsUpdatingEfficiency] = useState(false);
   onSave={handleUpdateEfficiency}
   isSaving={isUpdatingEfficiency}
 />
+
+{/* Edit Operator Modal */}
+{operatorToEdit && (
+  <EditOperatorModal
+    operator={operatorToEdit}
+    runId={selectedRun}
+    onClose={() => setOperatorToEdit(null)}
+    onOperatorUpdated={handleOperatorUpdated}
+  />
+)}
     </div>
   );
 }
