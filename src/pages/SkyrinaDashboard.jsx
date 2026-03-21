@@ -12,7 +12,7 @@ function toYMD(d) {
   return dt.toISOString().slice(0, 10);
 }
 
-// Helper function to calculate finished garments
+// Helper function to calculate finished garments from packing operations
 const calculateFinishedGarments = (runData) => {
   if (!runData) return 0;
   let total = 0;
@@ -32,8 +32,48 @@ const calculateFinishedGarments = (runData) => {
   return total;
 };
 
-// Helper function to calculate real-time efficiency
+// Helper function to calculate actual achieved daily efficiency based on SAM
+// Uses operators_count from line_runs (planned operators) not the actual operators in run_operators
+const calculateActualDailyEfficiency = (runData) => {
+  if (!runData) return 0;
+  
+  const sewed = calculateFinishedGarments(runData);
+  // Use operators_count from line_runs instead of counting actual operators
+  const operatorsCount = runData.run?.operators_count || 0;
+  const workingHours = runData.run?.working_hours || 0;
+  const sam = runData.run?.sam_minutes || 0;
+  
+  if (operatorsCount === 0 || workingHours === 0 || sam === 0) return 0;
+  
+  // Total available minutes = operators * working hours * 60
+  const availableMinutes = operatorsCount * workingHours * 60;
+  
+  // Total SAM produced = sewed pieces * SAM per piece
+  const totalSAMOutput = sewed * sam;
+  
+  // Actual efficiency = (SAM produced / available minutes) * 100
+  const actualEfficiency = availableMinutes > 0 ? (totalSAMOutput / availableMinutes) * 100 : 0;
+  
+  return Math.round(actualEfficiency * 100) / 100;
+};
+
+// Helper function to check if production has ended for the day
+const isProductionEnded = (selectedDate) => {
+  if (!selectedDate) return false;
+  const now = new Date();
+  const todayStr = selectedDate;
+  
+  const PRODUCTION_END = new Date(`${todayStr}T17:36:00`);
+  return now >= PRODUCTION_END;
+};
+
+// Helper function to calculate real-time efficiency (only if production hasn't ended)
 const calculateRealtimeEfficiency = (runData, selectedDate) => {
+  // If production has ended, return null to indicate we should show daily efficiency instead
+  if (isProductionEnded(selectedDate)) {
+    return null;
+  }
+  
   if (!runData || !selectedDate) return 0;
   
   const now = new Date();
@@ -60,19 +100,6 @@ const calculateRealtimeEfficiency = (runData, selectedDate) => {
     return 0;
   }
   
-  // If production has ended for the day
-  if (now >= PRODUCTION_END) {
-    // Calculate full day efficiency using total production
-    const sewed = calculateFinishedGarments(runData);
-    const totalSAMOutput = sewed * (runData.run?.sam_minutes || 0);
-    const totalAvailableMinutes = (runData.operators?.length || 0) * 
-                                  (runData.run?.working_hours || 0) * 60;
-    
-    return totalAvailableMinutes > 0 
-      ? (totalSAMOutput / totalAvailableMinutes) * 100 
-      : 0;
-  }
-  
   // Calculate elapsed time in minutes
   const elapsedMilliseconds = now - PRODUCTION_START;
   const elapsedMinutes = elapsedMilliseconds / (1000 * 60);
@@ -88,7 +115,7 @@ const calculateRealtimeEfficiency = (runData, selectedDate) => {
   const samProducedSoFar = sewedSoFar * (runData.run?.sam_minutes || 0);
   
   // Calculate available minutes so far (operators * actual time elapsed)
-  const operatorsCount = runData.operators?.length || 0;
+  const operatorsCount = runData.run?.operators_count || 0;
   const availableMinutesSoFar = operatorsCount * actualWorkingMinutes;
   
   // Calculate real-time efficiency
@@ -101,6 +128,11 @@ const calculateRealtimeEfficiency = (runData, selectedDate) => {
 
 const computeRealtimeTarget = (runData, selectedDate) => {
   if (!runData || !selectedDate) return 0;
+  
+  // If production has ended, return the full target
+  if (isProductionEnded(selectedDate)) {
+    return runData.run?.target_pcs || 0;
+  }
   
   const now = new Date();
   const todayStr = selectedDate;
@@ -135,7 +167,7 @@ const computeRealtimeTarget = (runData, selectedDate) => {
   return 0;
 };
 
-// Updated getLineStatus based on real-time efficiency
+// Updated getLineStatus based on actual efficiency
 const getLineStatus = (efficiency) => {
   if (efficiency === 0) return { color: 'gray', icon: '⏸️', text: 'Sin Datos' };
   if (efficiency < 40) return { color: 'red', icon: '🔴', text: 'Crítico' };
@@ -154,34 +186,6 @@ const getEfficiencyColor = (eff) => {
   if (eff >= 60) return 'text-yellow-600';
   if (eff >= 40) return 'text-orange-600';
   return 'text-red-600';
-};
-
-const getEfficiencyBgColor = (eff) => {
-  if (eff >= 90) return 'bg-green-200';
-  if (eff >= 80) return 'bg-green-100';
-  if (eff >= 70) return 'bg-lime-100';
-  if (eff >= 60) return 'bg-yellow-100';
-  if (eff >= 40) return 'bg-orange-100';
-  return 'bg-red-100';
-};
-
-// Same color scheme for real-time efficiency
-const getRealtimeEfficiencyColor = (eff) => {
-  if (eff >= 90) return 'text-green-800';
-  if (eff >= 80) return 'text-green-600';
-  if (eff >= 70) return 'text-lime-600';
-  if (eff >= 60) return 'text-yellow-600';
-  if (eff >= 40) return 'text-orange-600';
-  return 'text-red-600';
-};
-
-const getRealtimeEfficiencyBgColor = (eff) => {
-  if (eff >= 90) return 'bg-green-200';
-  if (eff >= 80) return 'bg-green-100';
-  if (eff >= 70) return 'bg-lime-100';
-  if (eff >= 60) return 'bg-yellow-100';
-  if (eff >= 40) return 'bg-orange-100';
-  return 'bg-red-100';
 };
 
 const getProgressBarColor = (eff) => {
@@ -232,7 +236,9 @@ export default function SkyrinaDashboard() {
   
   const [globalRealtimeTarget, setGlobalRealtimeTarget] = useState(0);
   const [globalRealtimeEfficiency, setGlobalRealtimeEfficiency] = useState(0);
+  const [globalDailyEfficiency, setGlobalDailyEfficiency] = useState(0);
   const [hoveredCard, setHoveredCard] = useState(null);
+  const [productionEnded, setProductionEnded] = useState(false);
   
   // Auto-refresh state
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -269,6 +275,18 @@ export default function SkyrinaDashboard() {
       });
   }, []);
 
+  // Check if production has ended
+  useEffect(() => {
+    const checkProductionEnded = () => {
+      const ended = isProductionEnded(date);
+      setProductionEnded(ended);
+    };
+    
+    checkProductionEnded();
+    const interval = setInterval(checkProductionEnded, 60000);
+    return () => clearInterval(interval);
+  }, [date]);
+
   // Auto-refresh logic
   useEffect(() => {
     let timer;
@@ -297,6 +315,8 @@ export default function SkyrinaDashboard() {
       let totalRealtimeTarget = 0;
       let totalWeightedEff = 0;
       let totalTargets = 0;
+      let totalDailyEfficiencySum = 0;
+      let totalLinesWithData = 0;
       
       for (const line of lineData) {
         try {
@@ -316,15 +336,12 @@ export default function SkyrinaDashboard() {
             const runData = detailRes.data;
             const realtimeTarget = computeRealtimeTarget(runData, date);
             const finishedGarments = calculateFinishedGarments(runData);
-            const operatorsCount = runData.operators?.length || 0;
-            const workingHours = runData.run?.working_hours || 0;
-            const sam = runData.run?.sam_minutes || 0;
             
+            // Calculate actual achieved daily efficiency based on SAM using operators_count from line_runs
+            const actualDailyEff = calculateActualDailyEfficiency(runData);
+            
+            // Calculate realtime efficiency (returns null if production ended)
             const realtimeEff = calculateRealtimeEfficiency(runData, date);
-            
-            const availableMinutes = operatorsCount * workingHours * 60;
-            const totalSAMOutput = finishedGarments * sam;
-            const efficiency = availableMinutes > 0 ? (totalSAMOutput / availableMinutes) * 100 : 0;
             
             styleRunsMap.set(styleKey, {
               lineNo: line.lineNo,
@@ -334,16 +351,18 @@ export default function SkyrinaDashboard() {
               sewed: finishedGarments,
               realtimeTarget,
               realtimeEfficiency: realtimeEff,
-              operatorsCount,
-              efficiency: Math.round(efficiency * 100) / 100,
-              workingHours,
-              sam,
+              dailyEfficiency: actualDailyEff,
+              operatorsCount: runData.run?.operators_count || 0,
+              workingHours: runData.run?.working_hours || 0,
+              sam: runData.run?.sam_minutes || 0,
               runData
             });
             
             totalRealtimeTarget += realtimeTarget;
+            totalDailyEfficiencySum += actualDailyEff;
+            totalLinesWithData++;
             
-            if (realtimeTarget > 0) {
+            if (realtimeTarget > 0 && realtimeEff !== null) {
               totalWeightedEff += realtimeEff * realtimeTarget;
               totalTargets += realtimeTarget;
             }
@@ -356,8 +375,11 @@ export default function SkyrinaDashboard() {
       const globalEff = totalTargets > 0 ? totalWeightedEff / totalTargets : 0;
       setGlobalRealtimeEfficiency(Math.round(globalEff * 100) / 100);
       
+      const globalDaily = totalLinesWithData > 0 ? totalDailyEfficiencySum / totalLinesWithData : 0;
+      setGlobalDailyEfficiency(Math.round(globalDaily * 100) / 100);
+      
       const uniqueStyleRuns = Array.from(styleRunsMap.values());
-      uniqueStyleRuns.sort((a, b) => b.efficiency - a.efficiency);
+      uniqueStyleRuns.sort((a, b) => b.dailyEfficiency - a.dailyEfficiency);
       
       setStyleRunData(uniqueStyleRuns);
       setGlobalRealtimeTarget(totalRealtimeTarget);
@@ -452,8 +474,7 @@ export default function SkyrinaDashboard() {
     return (
       <div className="flex justify-center items-center h-screen bg-gradient-to-br from-gray-50 to-gray-100">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-20 w-20 border-4 
-          border-gray-200 border-t-gray-900 mx-auto"></div>
+          <div className="animate-spin rounded-full h-20 w-20 border-4 border-gray-200 border-t-gray-900 mx-auto"></div>
           <p className="mt-6 text-xl text-gray-600 font-medium">Cargando panel Skyrina...</p>
         </div>
       </div>
@@ -461,8 +482,7 @@ export default function SkyrinaDashboard() {
   }
 
   return (
-    <div className="min-h-screen
-     bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col h-screen overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col h-screen overflow-hidden">
       <NavSkyrina 
         userName={user?.full_name || user?.username}
         date={date}
@@ -485,7 +505,7 @@ export default function SkyrinaDashboard() {
           </div>
         )}
 
-        {/* Summary Cards - 6 cards in first row - NO PROGRESS BARS */}
+        {/* Summary Cards - 6 cards in first row */}
         {!loading && summary && (
           <div className="grid grid-cols-6 gap-3 mb-4">
             {/* 1. Meta */}
@@ -515,27 +535,36 @@ export default function SkyrinaDashboard() {
               </div>
             </div>
 
-            {/* 4. Eficiencia RT - NO PROGRESS BAR */}
+            {/* 4. Eficiencia RT - Only show if production hasn't ended */}
+            {!productionEnded ? (
+              <div className="bg-white rounded-lg shadow p-3 border border-gray-200">
+                <div className="text-center">
+                  <div className="text-blue-900 text-xs font-bold mb-1">EFF RT</div>
+                  <div className={`text-2xl font-bold ${getEfficiencyColor(globalRealtimeEfficiency)}`}>
+                    {formatDecimal(globalRealtimeEfficiency)}%
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg shadow p-3 border border-gray-200">
+                <div className="text-center">
+                  <div className="text-blue-900 text-xs font-bold mb-1">EFF RT</div>
+                  <div className="text-2xl font-bold text-gray-400">FIN</div>
+                </div>
+              </div>
+            )}
+
+            {/* 5. Diario Eff - Show actual achieved daily efficiency */}
             <div className="bg-white rounded-lg shadow p-3 border border-gray-200">
               <div className="text-center">
-                <div className="text-blue-900 text-xs font-bold mb-1">EFF RT</div>
-                <div className={`text-2xl font-bold ${getRealtimeEfficiencyColor(globalRealtimeEfficiency)}`}>
-                  {formatDecimal(globalRealtimeEfficiency)}%
+                <div className="text-blue-900 text-xs font-bold mb-1">DIARIO</div>
+                <div className={`text-2xl font-bold ${getEfficiencyColor(globalDailyEfficiency)}`}>
+                  {formatDecimal(globalDailyEfficiency)}%
                 </div>
               </div>
             </div>
 
-            {/* 5. Diario Eff */}
-            <div className="bg-white rounded-lg shadow p-3 border border-gray-200">
-              <div className="text-center">
-                <div className="text-blue-900 text-xs font-bold mb-1">DIARIO EFF</div>
-                <div className={`text-2xl font-bold ${getEfficiencyColor(summary.overallEfficiency)}`}>
-                  {formatNumber(summary.overallEfficiency)}%
-                </div>
-              </div>
-            </div>
-
-            {/* 6. Cump - NO PROGRESS BAR */}
+            {/* 6. Cump */}
             <div className="bg-white rounded-lg shadow p-3 border border-gray-200">
               <div className="text-center">
                 <div className="text-blue-900 text-xs font-bold mb-1">CUMP</div>
@@ -545,12 +574,14 @@ export default function SkyrinaDashboard() {
           </div>
         )}
 
-        {/* Style Run Cards - 7 cards per row with progress bars */}
+        {/* Style Run Cards - 7 cards per row */}
         {!loading && styleRunData.length > 0 && (
           <div className="grid grid-cols-7 gap-3">
             {styleRunData.map((run, idx) => {
-              const realtimeEff = run.realtimeEfficiency;
-              const status = getLineStatus(realtimeEff);
+              const showRealtime = !productionEnded && run.realtimeEfficiency !== null;
+              // Always use actual daily efficiency (calculated from SAM with planned operators)
+              const displayEfficiency = run.dailyEfficiency;
+              const status = getLineStatus(displayEfficiency);
               const cardId = `${run.lineNo}-${run.style}`;
 
               return (
@@ -579,18 +610,18 @@ export default function SkyrinaDashboard() {
 
                   {/* Content */}
                   <div className="p-2">
-                    {/* Eff RT with Progress Bar */}
+                    {/* Efficiency Display - Always show actual daily efficiency */}
                     <div className="mb-2">
                       <div className="flex justify-between items-center mb-0.5">
-                        <span className="text-[10px] text-gray-500">Eff RT</span>
-                        <span className={`text-sm font-bold ${getRealtimeEfficiencyColor(realtimeEff)}`}>
-                          {realtimeEff.toFixed(1)}%
+                        <span className="text-[10px] text-gray-500">Efficiency</span>
+                        <span className={`text-sm font-bold ${getEfficiencyColor(displayEfficiency)}`}>
+                          {displayEfficiency.toFixed(1)}%
                         </span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div
-                          className={`h-2 rounded-full transition-all duration-500 ${getProgressBarColor(realtimeEff)}`}
-                          style={{ width: `${Math.min(realtimeEff, 100)}%` }}
+                          className={`h-2 rounded-full transition-all duration-500 ${getProgressBarColor(displayEfficiency)}`}
+                          style={{ width: `${Math.min(displayEfficiency, 100)}%` }}
                         ></div>
                       </div>
                     </div>
@@ -660,7 +691,7 @@ export default function SkyrinaDashboard() {
                       <th className="px-3 py-2 text-left">Operador lento</th>
                       <th className="px-3 py-2 text-left">Ayudado por</th>
                       <th className="px-3 py-2 text-left">Piezas</th>
-                    </tr>
+                     </tr>
                   </thead>
                   <tbody className="text-gray-900">
                     {assignments.map((a, idx) => (
