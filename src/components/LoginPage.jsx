@@ -146,7 +146,7 @@ export default function LoginPage() {
         <div className="mt-4 text-xs text-center">
           <button
             onClick={() =>
-              window.open("http://localhost:5000/api/health", "_blank")
+              window.open("/api/health", "_blank")
             }
             className="text-blue-500 hover:underline"
           >
