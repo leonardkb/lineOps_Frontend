@@ -57,6 +57,32 @@ const calculateActualDailyEfficiency = (runData) => {
   return Math.round(actualEfficiency * 100) / 100;
 };
 
+// Helper function to calculate total SAM output and total available minutes across all lines
+const calculateGlobalEfficiencyMetrics = (styleRuns) => {
+  let totalSAMOutput = 0;
+  let totalAvailableMinutes = 0;
+  
+  for (const run of styleRuns) {
+    const sewed = run.sewed;
+    const sam = run.sam;
+    const operatorsCount = run.operatorsCount;
+    const workingHours = run.workingHours;
+    
+    totalSAMOutput += sewed * sam;
+    totalAvailableMinutes += operatorsCount * workingHours * 60;
+  }
+  
+  const globalEfficiency = totalAvailableMinutes > 0 
+    ? (totalSAMOutput / totalAvailableMinutes) * 100 
+    : 0;
+  
+  return {
+    totalSAMOutput,
+    totalAvailableMinutes,
+    globalEfficiency: Math.round(globalEfficiency * 100) / 100
+  };
+};
+
 // Helper function to check if production has ended for the day
 const isProductionEnded = (selectedDate) => {
   if (!selectedDate) return false;
@@ -315,8 +341,10 @@ export default function SkyrinaDashboard() {
       let totalRealtimeTarget = 0;
       let totalWeightedEff = 0;
       let totalTargets = 0;
-      let totalDailyEfficiencySum = 0;
-      let totalLinesWithData = 0;
+      
+      // For weighted efficiency calculation
+      let totalSAMOutputSum = 0;
+      let totalAvailableMinutesSum = 0;
       
       for (const line of lineData) {
         try {
@@ -343,6 +371,14 @@ export default function SkyrinaDashboard() {
             // Calculate realtime efficiency (returns null if production ended)
             const realtimeEff = calculateRealtimeEfficiency(runData, date);
             
+            const operatorsCount = runData.run?.operators_count || 0;
+            const workingHours = runData.run?.working_hours || 0;
+            const sam = runData.run?.sam_minutes || 0;
+            
+            // Accumulate for weighted global efficiency
+            totalSAMOutputSum += finishedGarments * sam;
+            totalAvailableMinutesSum += operatorsCount * workingHours * 60;
+            
             styleRunsMap.set(styleKey, {
               lineNo: line.lineNo,
               runId: run.id,
@@ -352,15 +388,13 @@ export default function SkyrinaDashboard() {
               realtimeTarget,
               realtimeEfficiency: realtimeEff,
               dailyEfficiency: actualDailyEff,
-              operatorsCount: runData.run?.operators_count || 0,
-              workingHours: runData.run?.working_hours || 0,
-              sam: runData.run?.sam_minutes || 0,
+              operatorsCount: operatorsCount,
+              workingHours: workingHours,
+              sam: sam,
               runData
             });
             
             totalRealtimeTarget += realtimeTarget;
-            totalDailyEfficiencySum += actualDailyEff;
-            totalLinesWithData++;
             
             if (realtimeTarget > 0 && realtimeEff !== null) {
               totalWeightedEff += realtimeEff * realtimeTarget;
@@ -375,8 +409,11 @@ export default function SkyrinaDashboard() {
       const globalEff = totalTargets > 0 ? totalWeightedEff / totalTargets : 0;
       setGlobalRealtimeEfficiency(Math.round(globalEff * 100) / 100);
       
-      const globalDaily = totalLinesWithData > 0 ? totalDailyEfficiencySum / totalLinesWithData : 0;
-      setGlobalDailyEfficiency(Math.round(globalDaily * 100) / 100);
+      // Calculate weighted global daily efficiency (not average of averages)
+      const weightedGlobalDaily = totalAvailableMinutesSum > 0 
+        ? (totalSAMOutputSum / totalAvailableMinutesSum) * 100 
+        : 0;
+      setGlobalDailyEfficiency(Math.round(weightedGlobalDaily * 100) / 100);
       
       const uniqueStyleRuns = Array.from(styleRunsMap.values());
       uniqueStyleRuns.sort((a, b) => b.dailyEfficiency - a.dailyEfficiency);
@@ -554,7 +591,7 @@ export default function SkyrinaDashboard() {
               </div>
             )}
 
-            {/* 5. Diario Eff - Show actual achieved daily efficiency */}
+            {/* 5. Diario Eff - Weighted global daily efficiency */}
             <div className="bg-white rounded-lg shadow p-3 border border-gray-200">
               <div className="text-center">
                 <div className="text-blue-900 text-xs font-bold mb-1">DIARIO</div>
@@ -578,9 +615,11 @@ export default function SkyrinaDashboard() {
         {!loading && styleRunData.length > 0 && (
           <div className="grid grid-cols-7 gap-3">
             {styleRunData.map((run, idx) => {
+              // After 5:36 PM, show daily efficiency instead of real-time
               const showRealtime = !productionEnded && run.realtimeEfficiency !== null;
-              // Always use actual daily efficiency (calculated from SAM with planned operators)
-              const displayEfficiency = run.dailyEfficiency;
+              // Use daily efficiency after production ends
+              const displayEfficiency = showRealtime ? run.realtimeEfficiency : run.dailyEfficiency;
+              const displayLabel = showRealtime ? 'Eff RT' : 'Efficiency';
               const status = getLineStatus(displayEfficiency);
               const cardId = `${run.lineNo}-${run.style}`;
 
@@ -610,10 +649,10 @@ export default function SkyrinaDashboard() {
 
                   {/* Content */}
                   <div className="p-2">
-                    {/* Efficiency Display - Always show actual daily efficiency */}
+                    {/* Efficiency Display - Shows Eff RT before 5:36, Efficiency after */}
                     <div className="mb-2">
                       <div className="flex justify-between items-center mb-0.5">
-                        <span className="text-[10px] text-gray-500">Efficiency</span>
+                        <span className="text-[10px] text-gray-500">{displayLabel}</span>
                         <span className={`text-sm font-bold ${getEfficiencyColor(displayEfficiency)}`}>
                           {displayEfficiency.toFixed(1)}%
                         </span>
