@@ -647,7 +647,7 @@ export default function SkyrinaDashboard() {
           </div>
         )}
 
-        {/* Line Cards - Sorted by efficiency (highest to lowest) */}
+        {/* Line Cards - Sorted by efficiency (highest to lowest) - NO NAVIGATION */}
         {!loading && Object.keys(runDataMap).length > 0 && (
           <div className="grid grid-cols-7 gap-3">
             {prepareSortedLines().map(({ lineNo, runs, efficiency, lineRealtimeEfficiency, lineDailyEfficiency }) => {
@@ -669,17 +669,10 @@ export default function SkyrinaDashboard() {
               return (
                 <div
                   key={`${lineNo}`}
-                  onClick={() => {
-                    if (runs.length === 1) {
-                      navigate(`/admin-dashboard?line=${lineNo}&date=${date}&runId=${runs[0].runId}`);
-                    } else {
-                      navigate(`/admin-dashboard?line=${lineNo}&date=${date}&runId=${runs[0].runId}`);
-                    }
-                  }}
                   onMouseEnter={() => setHoveredCard(cardId)}
                   onMouseLeave={() => setHoveredCard(null)}
                   className={`bg-white rounded-lg shadow-md 
-                    hover:shadow-lg transition-all duration-200 cursor-pointer
+                    hover:shadow-lg transition-all duration-200
                     border-l-4 ${getStatusColor(status.color)} 
                     border-t border-r border-b border-gray-200
                     ${hoveredCard === cardId ? 'shadow-lg scale-[1.01]' : ''}`}
