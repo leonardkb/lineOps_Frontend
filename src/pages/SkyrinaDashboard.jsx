@@ -33,54 +33,21 @@ const calculateFinishedGarments = (runData) => {
 };
 
 // Helper function to calculate actual achieved daily efficiency based on SAM
-// Uses operators_count from line_runs (planned operators) not the actual operators in run_operators
 const calculateActualDailyEfficiency = (runData) => {
   if (!runData) return 0;
   
   const sewed = calculateFinishedGarments(runData);
-  // Use operators_count from line_runs instead of counting actual operators
   const operatorsCount = runData.run?.operators_count || 0;
   const workingHours = runData.run?.working_hours || 0;
   const sam = runData.run?.sam_minutes || 0;
   
   if (operatorsCount === 0 || workingHours === 0 || sam === 0) return 0;
   
-  // Total available minutes = operators * working hours * 60
   const availableMinutes = operatorsCount * workingHours * 60;
-  
-  // Total SAM produced = sewed pieces * SAM per piece
   const totalSAMOutput = sewed * sam;
-  
-  // Actual efficiency = (SAM produced / available minutes) * 100
   const actualEfficiency = availableMinutes > 0 ? (totalSAMOutput / availableMinutes) * 100 : 0;
   
   return Math.round(actualEfficiency * 100) / 100;
-};
-
-// Helper function to calculate total SAM output and total available minutes across all lines
-const calculateGlobalEfficiencyMetrics = (styleRuns) => {
-  let totalSAMOutput = 0;
-  let totalAvailableMinutes = 0;
-  
-  for (const run of styleRuns) {
-    const sewed = run.sewed;
-    const sam = run.sam;
-    const operatorsCount = run.operatorsCount;
-    const workingHours = run.workingHours;
-    
-    totalSAMOutput += sewed * sam;
-    totalAvailableMinutes += operatorsCount * workingHours * 60;
-  }
-  
-  const globalEfficiency = totalAvailableMinutes > 0 
-    ? (totalSAMOutput / totalAvailableMinutes) * 100 
-    : 0;
-  
-  return {
-    totalSAMOutput,
-    totalAvailableMinutes,
-    globalEfficiency: Math.round(globalEfficiency * 100) / 100
-  };
 };
 
 // Helper function to check if production has ended for the day
@@ -93,14 +60,14 @@ const isProductionEnded = (selectedDate) => {
   return now >= PRODUCTION_END;
 };
 
-// Helper function to calculate real-time efficiency (only if production hasn't ended)
+// Helper function to calculate real-time efficiency
 const calculateRealtimeEfficiency = (runData, selectedDate) => {
-  // If production has ended, return null to indicate we should show daily efficiency instead
+  if (!runData || !selectedDate) return null;
+  
+  // If production has ended, return null to indicate we should show daily efficiency
   if (isProductionEnded(selectedDate)) {
     return null;
   }
-  
-  if (!runData || !selectedDate) return 0;
   
   const now = new Date();
   const todayStr = selectedDate;
@@ -124,6 +91,11 @@ const calculateRealtimeEfficiency = (runData, selectedDate) => {
   // If production hasn't started yet
   if (now < PRODUCTION_START) {
     return 0;
+  }
+  
+  // If production has ended for the day
+  if (now >= PRODUCTION_END) {
+    return null;
   }
   
   // Calculate elapsed time in minutes
@@ -152,6 +124,7 @@ const calculateRealtimeEfficiency = (runData, selectedDate) => {
   return Math.round(realtimeEfficiency * 100) / 100;
 };
 
+// Helper function to calculate real-time target
 const computeRealtimeTarget = (runData, selectedDate) => {
   if (!runData || !selectedDate) return 0;
   
@@ -163,8 +136,10 @@ const computeRealtimeTarget = (runData, selectedDate) => {
   const now = new Date();
   const todayStr = selectedDate;
   
+  // Production timeline: 8:00 AM start
   const PRODUCTION_START = new Date(`${todayStr}T08:00:00`);
   
+  // Get the last slot end time
   const slots = (runData.slots || [])
     .map(slot => {
       const end = new Date(`${todayStr}T${slot.slot_end}`);
@@ -172,14 +147,20 @@ const computeRealtimeTarget = (runData, selectedDate) => {
     })
     .filter(s => s.end);
   
+  // Find the latest end time from slots
   const PRODUCTION_END = slots.length > 0 
     ? new Date(Math.max(...slots.map(s => s.end.getTime())))
     : new Date(`${todayStr}T17:36:00`);
   
   const totalTarget = runData.run?.target_pcs || 0;
   
-  if (now < PRODUCTION_START) return 0;
-  if (now >= PRODUCTION_END) return totalTarget;
+  if (now < PRODUCTION_START) {
+    return 0;
+  }
+  
+  if (now >= PRODUCTION_END) {
+    return totalTarget;
+  }
   
   const elapsedMilliseconds = now - PRODUCTION_START;
   const totalProductionMilliseconds = PRODUCTION_END - PRODUCTION_START;
@@ -193,7 +174,6 @@ const computeRealtimeTarget = (runData, selectedDate) => {
   return 0;
 };
 
-// Updated getLineStatus based on actual efficiency
 const getLineStatus = (efficiency) => {
   if (efficiency === 0) return { color: 'gray', icon: '⏸️', text: 'Sin Datos' };
   if (efficiency < 40) return { color: 'red', icon: '🔴', text: 'Crítico' };
@@ -204,7 +184,6 @@ const getLineStatus = (efficiency) => {
   return { color: 'emerald', icon: '👑', text: 'Excelente' };
 };
 
-// Color functions with the requested scheme
 const getEfficiencyColor = (eff) => {
   if (eff >= 90) return 'text-green-800';
   if (eff >= 80) return 'text-green-600';
@@ -255,7 +234,7 @@ export default function SkyrinaDashboard() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [summary, setSummary] = useState(null);
   const [lineData, setLineData] = useState([]);
-  const [combinedLineData, setCombinedLineData] = useState([]); // New state for combined lines
+  const [runDataMap, setRunDataMap] = useState({}); // Store all run data by line
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -266,7 +245,6 @@ export default function SkyrinaDashboard() {
   const [hoveredCard, setHoveredCard] = useState(null);
   const [productionEnded, setProductionEnded] = useState(false);
   
-  // Auto-refresh state
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [countdown, setCountdown] = useState(300);
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
@@ -301,7 +279,6 @@ export default function SkyrinaDashboard() {
       });
   }, []);
 
-  // Check if production has ended
   useEffect(() => {
     const checkProductionEnded = () => {
       const ended = isProductionEnded(date);
@@ -313,7 +290,6 @@ export default function SkyrinaDashboard() {
     return () => clearInterval(interval);
   }, [date]);
 
-  // Auto-refresh logic
   useEffect(() => {
     let timer;
     if (autoRefresh && date) {
@@ -330,165 +306,104 @@ export default function SkyrinaDashboard() {
     return () => clearInterval(timer);
   }, [autoRefresh, date]);
 
-  // Fetch all style runs for each line and combine them
+  // Fetch all run details for each line - grouped by line
   useEffect(() => {
-    // In the fetchAllStyleRuns useEffect, replace the linesMap initialization and accumulation part:
-
-const fetchAllStyleRuns = async () => {
-  if (!lineData.length || !date) return;
-  
-  const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}` };
-  const linesMap = new Map(); // Key: lineNo, Value: combined line data
-  let totalRealtimeTarget = 0;
-  let totalWeightedEff = 0;
-  let totalTargets = 0;
-  
-  // For weighted efficiency calculation
-  let totalSAMOutputSum = 0;
-  let totalAvailableMinutesSum = 0;
-  
-  for (const line of lineData) {
-    try {
-      const runsRes = await axios.get(`/api/line-runs/${line.lineNo}`, { headers });
-      if (!runsRes.data.success) continue;
+    const fetchAllRunDetails = async () => {
+      if (!lineData.length || !date) return;
       
-      const runsForDate = runsRes.data.runs.filter(r => toYMD(r.run_date) === date);
+      const token = localStorage.getItem('token');
+      const headers = { Authorization: `Bearer ${token}` };
       
-      if (runsForDate.length === 0) {
-        continue;
-      }
+      const newRunDataMap = {};
+      let totalGlobalWeightedEff = 0;
+      let totalGlobalTargets = 0;
+      let totalSAMOutputSum = 0;
+      let totalAvailableMinutesSum = 0;
+      let totalGlobalRealtimeTarget = 0;
       
-      // Initialize combined line data
-      if (!linesMap.has(line.lineNo)) {
-        linesMap.set(line.lineNo, {
-          lineNo: line.lineNo,
-          totalTargetPcs: 0,
-          totalSewed: 0,
-          totalRealtimeTarget: 0,
-          totalRealtimeEfficiencyWeighted: 0,
-          totalEfficiencyWeight: 0,
-          totalSAMOutput: 0,
-          totalAvailableMinutes: 0,
-          runs: [],
-          uniqueStyles: new Set() // Add a Set to track unique styles
-        });
-      }
-      
-      const combinedLine = linesMap.get(line.lineNo);
-      
-      for (const run of runsForDate) {
-        // Add style to unique styles set
-        combinedLine.uniqueStyles.add(run.style);
-        
-        const detailRes = await axios.get(`/api/get-run-data/${run.id}`, { headers });
-        if (!detailRes.data.success) continue;
-        
-        const runData = detailRes.data;
-        const realtimeTarget = computeRealtimeTarget(runData, date);
-        const finishedGarments = calculateFinishedGarments(runData);
-        
-        // Calculate actual achieved daily efficiency based on SAM
-        const actualDailyEff = calculateActualDailyEfficiency(runData);
-        
-        // Calculate realtime efficiency (returns null if production ended)
-        const realtimeEff = calculateRealtimeEfficiency(runData, date);
-        
-        const operatorsCount = runData.run?.operators_count || 0;
-        const workingHours = runData.run?.working_hours || 0;
-        const sam = runData.run?.sam_minutes || 0;
-        
-        // Accumulate for combined line
-        combinedLine.totalTargetPcs += run.target_pcs;
-        combinedLine.totalSewed += finishedGarments;
-        combinedLine.totalRealtimeTarget += realtimeTarget;
-        combinedLine.totalSAMOutput += finishedGarments * sam;
-        combinedLine.totalAvailableMinutes += operatorsCount * workingHours * 60;
-        
-        // For weighted efficiency calculation
-        if (realtimeTarget > 0 && realtimeEff !== null) {
-          combinedLine.totalRealtimeEfficiencyWeighted += realtimeEff * realtimeTarget;
-          combinedLine.totalEfficiencyWeight += realtimeTarget;
-        }
-        
-        combinedLine.runs.push({
-          runId: run.id,
-          style: run.style,
-          targetPcs: run.target_pcs,
-          sewed: finishedGarments,
-          realtimeTarget,
-          realtimeEfficiency: realtimeEff,
-          dailyEfficiency: actualDailyEff,
-          operatorsCount,
-          workingHours,
-          sam,
-          runData
-        });
-        
-        // Accumulate for global totals
-        totalRealtimeTarget += realtimeTarget;
-        totalSAMOutputSum += finishedGarments * sam;
-        totalAvailableMinutesSum += operatorsCount * workingHours * 60;
-        
-        if (realtimeTarget > 0 && realtimeEff !== null) {
-          totalWeightedEff += realtimeEff * realtimeTarget;
-          totalTargets += realtimeTarget;
+      for (const line of lineData) {
+        try {
+          const runsRes = await axios.get(`/api/line-runs/${line.lineNo}`, { headers });
+          if (!runsRes.data.success) continue;
+          
+          const runsForDate = runsRes.data.runs.filter(r => toYMD(r.run_date) === date);
+          
+          if (runsForDate.length === 0) {
+            newRunDataMap[line.lineNo] = [];
+            continue;
+          }
+          
+          const lineRuns = [];
+          
+          for (const run of runsForDate) {
+            const detailRes = await axios.get(`/api/get-run-data/${run.id}`, { headers });
+            if (!detailRes.data.success) continue;
+            
+            const runData = detailRes.data;
+            const finishedGarments = calculateFinishedGarments(runData);
+            const realtimeTarget = computeRealtimeTarget(runData, date);
+            const realtimeEff = calculateRealtimeEfficiency(runData, date);
+            const dailyEff = calculateActualDailyEfficiency(runData);
+            const operatorsCount = runData.run?.operators_count || 0;
+            const workingHours = runData.run?.working_hours || 0;
+            const sam = runData.run?.sam_minutes || 0;
+            
+            // Calculate for global totals
+            totalSAMOutputSum += finishedGarments * sam;
+            totalAvailableMinutesSum += operatorsCount * workingHours * 60;
+            totalGlobalRealtimeTarget += realtimeTarget;
+            
+            // Weighted real-time efficiency (only count non-null values)
+            if (realtimeTarget > 0 && realtimeEff !== null) {
+              totalGlobalWeightedEff += realtimeEff * realtimeTarget;
+              totalGlobalTargets += realtimeTarget;
+            }
+            
+            lineRuns.push({
+              runId: run.id,
+              style: run.style,
+              styleGroupId: runData.run?.style_group_id,
+              styleGroupName: runData.run?.style_group_name,
+              targetPcs: run.target_pcs,
+              finishedGarments,
+              realtimeTarget,
+              realtimeEff,
+              dailyEff,
+              operatorsCount,
+              workingHours,
+              sam,
+              runData
+            });
+          }
+          
+          newRunDataMap[line.lineNo] = lineRuns;
+          
+        } catch (err) {
+          console.error(`Error fetching details for line ${line.lineNo}:`, err);
+          newRunDataMap[line.lineNo] = [];
         }
       }
-    } catch (err) {
-      console.error(`Error fetching details for line ${line.lineNo}:`, err);
-    }
-  }
-  
-  // Calculate final combined metrics for each line
-  const combinedLines = Array.from(linesMap.values()).map(line => {
-    // Calculate combined efficiency (weighted average based on targets)
-    let combinedRealtimeEfficiency = 0;
-    if (line.totalEfficiencyWeight > 0) {
-      combinedRealtimeEfficiency = line.totalRealtimeEfficiencyWeighted / line.totalEfficiencyWeight;
-    }
-    
-    // Calculate combined daily efficiency based on SAM
-    let combinedDailyEfficiency = 0;
-    if (line.totalAvailableMinutes > 0) {
-      combinedDailyEfficiency = (line.totalSAMOutput / line.totalAvailableMinutes) * 100;
-    }
-    
-    // Get unique styles array (convert Set to Array)
-    const uniqueStyleList = Array.from(line.uniqueStyles);
-    
-    return {
-      ...line,
-      combinedRealtimeEfficiency: Math.round(combinedRealtimeEfficiency * 100) / 100,
-      combinedDailyEfficiency: Math.round(combinedDailyEfficiency * 100) / 100,
-      // For display, choose the primary style name (the first one or most common)
-      primaryStyle: uniqueStyleList.length > 0 ? uniqueStyleList[0] : '',
-      // Show unique styles (deduplicated)
-      styles: uniqueStyleList
+      
+      setRunDataMap(newRunDataMap);
+      
+      // Calculate global metrics
+      const globalRealtimeEff = totalGlobalTargets > 0 
+        ? (totalGlobalWeightedEff / totalGlobalTargets) 
+        : 0;
+      const globalDailyEff = totalAvailableMinutesSum > 0 
+        ? (totalSAMOutputSum / totalAvailableMinutesSum) * 100 
+        : 0;
+      
+      setGlobalRealtimeTarget(totalGlobalRealtimeTarget);
+      setGlobalRealtimeEfficiency(Math.round(globalRealtimeEff * 100) / 100);
+      setGlobalDailyEfficiency(Math.round(globalDailyEff * 100) / 100);
     };
-  });
-  
-  // Sort by daily efficiency (combined)
-  combinedLines.sort((a, b) => b.combinedDailyEfficiency - a.combinedDailyEfficiency);
-  
-  const globalEff = totalTargets > 0 ? totalWeightedEff / totalTargets : 0;
-  setGlobalRealtimeEfficiency(Math.round(globalEff * 100) / 100);
-  
-  // Calculate weighted global daily efficiency (not average of averages)
-  const weightedGlobalDaily = totalAvailableMinutesSum > 0 
-    ? (totalSAMOutputSum / totalAvailableMinutesSum) * 100 
-    : 0;
-  setGlobalDailyEfficiency(Math.round(weightedGlobalDaily * 100) / 100);
-  
-  setCombinedLineData(combinedLines);
-  setGlobalRealtimeTarget(totalRealtimeTarget);
-};
     
-    fetchAllStyleRuns();
+    fetchAllRunDetails();
     
-    const interval = setInterval(fetchAllStyleRuns, 60000);
+    const interval = setInterval(fetchAllRunDetails, 60000);
     return () => clearInterval(interval);
-  }, [lineData, date]);
+  }, [lineData, date, productionEnded]);
 
   const fetchDashboardData = async (selectedDate, isRefresh = false) => {
     if (!isRefresh) setLoading(true);
@@ -523,7 +438,7 @@ const fetchAllStyleRuns = async () => {
     const newDate = e.target.value;
     setDate(newDate);
     fetchDashboardData(newDate, false);
-    setCombinedLineData([]);
+    setRunDataMap({});
     setCountdown(300);
   };
 
@@ -569,6 +484,72 @@ const fetchAllStyleRuns = async () => {
     });
   };
 
+  // Calculate weighted efficiency for a line with multiple styles
+  const calculateLineWeightedEfficiency = (runs, useRealtime = false) => {
+    if (!runs || runs.length === 0) return 0;
+    
+    let totalWeightedEff = 0;
+    let totalTarget = 0;
+    
+    for (const run of runs) {
+      const eff = useRealtime && run.realtimeEff !== null ? run.realtimeEff : run.dailyEff;
+      const target = useRealtime && run.realtimeEff !== null ? run.realtimeTarget : run.targetPcs;
+      
+      if (target > 0 && eff > 0) {
+        totalWeightedEff += eff * target;
+        totalTarget += target;
+      }
+    }
+    
+    return totalTarget > 0 ? totalWeightedEff / totalTarget : 0;
+  };
+
+  // Calculate total finished garments for a line
+  const calculateLineTotalFinished = (runs) => {
+    if (!runs || runs.length === 0) return 0;
+    return runs.reduce((sum, run) => sum + run.finishedGarments, 0);
+  };
+
+  // Calculate total realtime target for a line
+  const calculateLineTotalRealtimeTarget = (runs) => {
+    if (!runs || runs.length === 0) return 0;
+    return runs.reduce((sum, run) => sum + run.realtimeTarget, 0);
+  };
+
+  // Calculate total target for a line
+  const calculateLineTotalTarget = (runs) => {
+    if (!runs || runs.length === 0) return 0;
+    return runs.reduce((sum, run) => sum + run.targetPcs, 0);
+  };
+
+  // Prepare line data with calculated efficiency for sorting
+  const prepareSortedLines = () => {
+    const linesWithEfficiency = [];
+    
+    for (const [lineNo, runs] of Object.entries(runDataMap)) {
+      if (!runs || runs.length === 0) continue;
+      
+      const lineRealtimeEfficiency = calculateLineWeightedEfficiency(runs, true);
+      const lineDailyEfficiency = calculateLineWeightedEfficiency(runs, false);
+      const displayEfficiency = !productionEnded && lineRealtimeEfficiency > 0 
+        ? lineRealtimeEfficiency 
+        : lineDailyEfficiency;
+      
+      linesWithEfficiency.push({
+        lineNo,
+        runs,
+        efficiency: displayEfficiency,
+        lineRealtimeEfficiency,
+        lineDailyEfficiency
+      });
+    }
+    
+    // Sort by efficiency (highest to lowest)
+    linesWithEfficiency.sort((a, b) => b.efficiency - a.efficiency);
+    
+    return linesWithEfficiency;
+  };
+
   if (!user) {
     return (
       <div className="flex justify-center items-center h-screen bg-gradient-to-br from-gray-50 to-gray-100">
@@ -597,17 +578,15 @@ const fetchAllStyleRuns = async () => {
       />
 
       <main className="flex-1 max-w-[1920px] mx-auto px-4 py-2 w-full overflow-y-auto">
-        {/* Error message */}
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded-lg mb-2 text-sm">
             ⚠️ {error}
           </div>
         )}
 
-        {/* Summary Cards - 6 cards in first row */}
+        {/* Summary Cards */}
         {!loading && summary && (
           <div className="grid grid-cols-6 gap-3 mb-4">
-            {/* 1. Meta */}
             <div className="bg-white rounded-lg shadow p-3 border border-gray-200">
               <div className="text-center">
                 <div className="text-blue-900 text-xs font-bold mb-1">META</div>
@@ -615,7 +594,6 @@ const fetchAllStyleRuns = async () => {
               </div>
             </div>
 
-            {/* 2. Meta RT */}
             <div className="bg-white rounded-lg shadow p-3 border border-gray-200">
               <div className="text-center">
                 <div className="text-blue-900 text-xs font-bold mb-1">META RT</div>
@@ -626,7 +604,6 @@ const fetchAllStyleRuns = async () => {
               </div>
             </div>
 
-            {/* 3. Tot Producido */}
             <div className="bg-white rounded-lg shadow p-3 border border-gray-200">
               <div className="text-center">
                 <div className="text-blue-900 text-xs font-bold mb-1">TOT PROD</div>
@@ -634,7 +611,6 @@ const fetchAllStyleRuns = async () => {
               </div>
             </div>
 
-            {/* 4. Eficiencia RT - Only show if production hasn't ended */}
             {!productionEnded ? (
               <div className="bg-white rounded-lg shadow p-3 border border-gray-200">
                 <div className="text-center">
@@ -653,7 +629,6 @@ const fetchAllStyleRuns = async () => {
               </div>
             )}
 
-            {/* 5. Diario Eff - Weighted global daily efficiency */}
             <div className="bg-white rounded-lg shadow p-3 border border-gray-200">
               <div className="text-center">
                 <div className="text-blue-900 text-xs font-bold mb-1">DIARIO</div>
@@ -663,7 +638,6 @@ const fetchAllStyleRuns = async () => {
               </div>
             </div>
 
-            {/* 6. Cump */}
             <div className="bg-white rounded-lg shadow p-3 border border-gray-200">
               <div className="text-center">
                 <div className="text-blue-900 text-xs font-bold mb-1">CUMP</div>
@@ -673,60 +647,57 @@ const fetchAllStyleRuns = async () => {
           </div>
         )}
 
-        {/* Combined Line Cards - 7 cards per row */}
-        {!loading && combinedLineData.length > 0 && (
+        {/* Line Cards - Sorted by efficiency (highest to lowest) */}
+        {!loading && Object.keys(runDataMap).length > 0 && (
           <div className="grid grid-cols-7 gap-3">
-            {combinedLineData.map((line, idx) => {
-              // After 5:36 PM, show daily efficiency instead of real-time
-              const showRealtime = !productionEnded;
-              // Use daily efficiency after production ends
-              const displayEfficiency = showRealtime ? line.combinedRealtimeEfficiency : line.combinedDailyEfficiency;
+            {prepareSortedLines().map(({ lineNo, runs, efficiency, lineRealtimeEfficiency, lineDailyEfficiency }) => {
+              // Calculate aggregated metrics for the line
+              const lineTotalFinished = calculateLineTotalFinished(runs);
+              const lineTotalRealtimeTarget = calculateLineTotalRealtimeTarget(runs);
+              
+              const showRealtime = !productionEnded && lineRealtimeEfficiency > 0;
+              const displayEfficiency = showRealtime ? lineRealtimeEfficiency : lineDailyEfficiency;
               const displayLabel = showRealtime ? 'Eff RT' : 'Efficiency';
               const status = getLineStatus(displayEfficiency);
-              const cardId = `L${line.lineNo}`;
+              const cardId = `L${lineNo}`;
               
-              // Calculate variance
-              const variance = line.totalSewed - line.totalRealtimeTarget;
-              const variancePercent = line.totalRealtimeTarget > 0 
-                ? Math.abs((variance / line.totalRealtimeTarget) * 100) 
+              const variance = lineTotalFinished - lineTotalRealtimeTarget;
+              const variancePercent = lineTotalRealtimeTarget > 0 
+                ? Math.abs((variance / lineTotalRealtimeTarget) * 100) 
                 : 0;
 
               return (
                 <div
-                  key={cardId}
+                  key={`${lineNo}`}
+                  onClick={() => {
+                    if (runs.length === 1) {
+                      navigate(`/admin-dashboard?line=${lineNo}&date=${date}&runId=${runs[0].runId}`);
+                    } else {
+                      navigate(`/admin-dashboard?line=${lineNo}&date=${date}&runId=${runs[0].runId}`);
+                    }
+                  }}
                   onMouseEnter={() => setHoveredCard(cardId)}
                   onMouseLeave={() => setHoveredCard(null)}
                   className={`bg-white rounded-lg shadow-md 
-                    hover:shadow-lg transition-all duration-200
+                    hover:shadow-lg transition-all duration-200 cursor-pointer
                     border-l-4 ${getStatusColor(status.color)} 
                     border-t border-r border-b border-gray-200
                     ${hoveredCard === cardId ? 'shadow-lg scale-[1.01]' : ''}`}
                 >
                   {/* Header */}
-<div className="px-2 py-1.5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
-  <div className="flex justify-between items-center mb-0.5">
-    <span className="font-bold text-base text-gray-900">L{line.lineNo}</span>
-    <div className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getStatusBgColor(status.color)}`}>
-      {status.icon}
-    </div>
-  </div>
-  
-  {/* Show styles count and tooltip */}
-  {line.styles.length === 1 ? (
-    <div className="text-xs font-medium text-gray-600 truncate" title={line.styles[0]}>
-      {line.styles[0]}
-    </div>
-  ) : (
-    <>
-      <div className="text-xs font-medium text-gray-600" title={line.styles.join(', ')}>
-        {line.styles.length} estilos
-      </div>
-      <div className="text-[8px] text-gray-400 truncate">
-        {line.styles.join(', ')}
-      </div>
-    </>
-  )}
-</div>
+                  <div className="px-2 py-1.5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+                    <div className="flex justify-between items-center mb-0.5">
+                      <span className="font-bold text-base text-gray-900">L{lineNo}</span>
+                      <div className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getStatusBgColor(status.color)}`}>
+                        {status.icon}
+                      </div>
+                    </div>
+                    
+                    {/* Style names - show all styles in this line */}
+                    <div className="text-xs font-medium text-gray-600 truncate" title={runs.map(r => r.style).join(', ')}>
+                      {runs.map(r => r.style).join(' / ')}
+                    </div>
+                  </div>
 
                   {/* Content */}
                   <div className="p-2">
@@ -746,15 +717,15 @@ const fetchAllStyleRuns = async () => {
                       </div>
                     </div>
 
-                    {/* Stats - Two columns */}
+                    {/* Stats - Two columns with totals */}
                     <div className="grid grid-cols-2 gap-1 mb-2">
                       <div className="bg-gray-50 rounded p-1.5">
                         <div className="text-[9px] text-gray-500 mb-0.5">Obj RT</div>
-                        <div className="text-sm font-bold text-gray-900">{formatNumber(line.totalRealtimeTarget)}</div>
+                        <div className="text-sm font-bold text-gray-900">{formatNumber(lineTotalRealtimeTarget)}</div>
                       </div>
                       <div className="bg-gray-50 rounded p-1.5">
                         <div className="text-[9px] text-gray-500 mb-0.5">Cosido</div>
-                        <div className="text-sm font-bold text-gray-900">{formatNumber(line.totalSewed)}</div>
+                        <div className="text-sm font-bold text-gray-900">{formatNumber(lineTotalFinished)}</div>
                       </div>
                     </div>
 
@@ -762,11 +733,11 @@ const fetchAllStyleRuns = async () => {
                     <div className="flex justify-between items-center pt-1.5 border-t border-gray-100">
                       <span className="text-[10px] text-gray-500">Var</span>
                       <span className={`font-mono font-bold flex items-center gap-0.5 text-xs ${
-                        line.totalSewed > line.totalRealtimeTarget ? 'text-green-600' : 
-                        line.totalSewed < line.totalRealtimeTarget ? 'text-red-600' : 'text-gray-600'
+                        lineTotalFinished > lineTotalRealtimeTarget ? 'text-green-600' : 
+                        lineTotalFinished < lineTotalRealtimeTarget ? 'text-red-600' : 'text-gray-600'
                       }`}>
-                        {line.totalSewed > line.totalRealtimeTarget ? '↑' : line.totalSewed < line.totalRealtimeTarget ? '↓' : '→'}
-                        {line.totalSewed > line.totalRealtimeTarget ? '+' : ''}{formatNumber(Math.abs(variance))}
+                        {lineTotalFinished > lineTotalRealtimeTarget ? '↑' : lineTotalFinished < lineTotalRealtimeTarget ? '↓' : '→'}
+                        {lineTotalFinished > lineTotalRealtimeTarget ? '+' : ''}{formatNumber(Math.abs(variance))}
                         <span className="text-[8px] opacity-75">
                           ({variancePercent.toFixed(0)}%)
                         </span>
@@ -779,7 +750,6 @@ const fetchAllStyleRuns = async () => {
           </div>
         )}
 
-        {/* Loading state */}
         {loading && (
           <div className="bg-white rounded-xl shadow p-6">
             <div className="animate-pulse">
@@ -789,8 +759,7 @@ const fetchAllStyleRuns = async () => {
           </div>
         )}
 
-        {/* No data state */}
-        {!loading && combinedLineData.length === 0 && (
+        {!loading && Object.keys(runDataMap).length === 0 && (
           <div className="bg-white rounded-xl shadow p-12 text-center">
             <p className="text-gray-500 text-xl font-medium">
               No se encontraron datos para esta fecha
@@ -811,7 +780,7 @@ const fetchAllStyleRuns = async () => {
                       <th className="px-3 py-2 text-left">Operador lento</th>
                       <th className="px-3 py-2 text-left">Ayudado por</th>
                       <th className="px-3 py-2 text-left">Piezas</th>
-                    </tr>
+                     </tr>
                   </thead>
                   <tbody className="text-gray-900">
                     {assignments.map((a, idx) => (
