@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import NavSkyrina from '../components/NavSkyrina';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 function toYMD(d) {
   if (!d) return "";
@@ -255,7 +256,7 @@ export default function SkyrinaDashboard() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [summary, setSummary] = useState(null);
   const [lineData, setLineData] = useState([]);
-  const [styleRunData, setStyleRunData] = useState([]);
+  const [combinedLineData, setCombinedLineData] = useState([]); // New state for combined lines
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -278,7 +279,7 @@ export default function SkyrinaDashboard() {
       return;
     }
 
-    axios.get(`/api/me`, {
+    axios.get(`${API_BASE}/api/me`, {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => {
@@ -330,97 +331,159 @@ export default function SkyrinaDashboard() {
     return () => clearInterval(timer);
   }, [autoRefresh, date]);
 
-  // Fetch all style runs for each line
+  // Fetch all style runs for each line and combine them
   useEffect(() => {
-    const fetchAllStyleRuns = async () => {
-      if (!lineData.length || !date) return;
+    // In the fetchAllStyleRuns useEffect, replace the linesMap initialization and accumulation part:
+
+const fetchAllStyleRuns = async () => {
+  if (!lineData.length || !date) return;
+  
+  const token = localStorage.getItem('token');
+  const headers = { Authorization: `Bearer ${token}` };
+  const linesMap = new Map(); // Key: lineNo, Value: combined line data
+  let totalRealtimeTarget = 0;
+  let totalWeightedEff = 0;
+  let totalTargets = 0;
+  
+  // For weighted efficiency calculation
+  let totalSAMOutputSum = 0;
+  let totalAvailableMinutesSum = 0;
+  
+  for (const line of lineData) {
+    try {
+      const runsRes = await axios.get(`${API_BASE}/api/line-runs/${line.lineNo}`, { headers });
+      if (!runsRes.data.success) continue;
       
-      const token = localStorage.getItem('token');
-      const headers = { Authorization: `Bearer ${token}` };
-      const styleRunsMap = new Map();
-      let totalRealtimeTarget = 0;
-      let totalWeightedEff = 0;
-      let totalTargets = 0;
+      const runsForDate = runsRes.data.runs.filter(r => toYMD(r.run_date) === date);
       
-      // For weighted efficiency calculation
-      let totalSAMOutputSum = 0;
-      let totalAvailableMinutesSum = 0;
-      
-      for (const line of lineData) {
-        try {
-          const runsRes = await axios.get(`/api/line-runs/${line.lineNo}`, { headers });
-          if (!runsRes.data.success) continue;
-          
-          const runsForDate = runsRes.data.runs.filter(r => toYMD(r.run_date) === date);
-          
-          for (const run of runsForDate) {
-            const styleKey = `${line.lineNo}-${run.style}`;
-            
-            if (styleRunsMap.has(styleKey)) continue;
-            
-            const detailRes = await axios.get(`/api/get-run-data/${run.id}`, { headers });
-            if (!detailRes.data.success) continue;
-            
-            const runData = detailRes.data;
-            const realtimeTarget = computeRealtimeTarget(runData, date);
-            const finishedGarments = calculateFinishedGarments(runData);
-            
-            // Calculate actual achieved daily efficiency based on SAM using operators_count from line_runs
-            const actualDailyEff = calculateActualDailyEfficiency(runData);
-            
-            // Calculate realtime efficiency (returns null if production ended)
-            const realtimeEff = calculateRealtimeEfficiency(runData, date);
-            
-            const operatorsCount = runData.run?.operators_count || 0;
-            const workingHours = runData.run?.working_hours || 0;
-            const sam = runData.run?.sam_minutes || 0;
-            
-            // Accumulate for weighted global efficiency
-            totalSAMOutputSum += finishedGarments * sam;
-            totalAvailableMinutesSum += operatorsCount * workingHours * 60;
-            
-            styleRunsMap.set(styleKey, {
-              lineNo: line.lineNo,
-              runId: run.id,
-              style: run.style,
-              targetPcs: run.target_pcs,
-              sewed: finishedGarments,
-              realtimeTarget,
-              realtimeEfficiency: realtimeEff,
-              dailyEfficiency: actualDailyEff,
-              operatorsCount: operatorsCount,
-              workingHours: workingHours,
-              sam: sam,
-              runData
-            });
-            
-            totalRealtimeTarget += realtimeTarget;
-            
-            if (realtimeTarget > 0 && realtimeEff !== null) {
-              totalWeightedEff += realtimeEff * realtimeTarget;
-              totalTargets += realtimeTarget;
-            }
-          }
-        } catch (err) {
-          console.error(`Error fetching details for line ${line.lineNo}:`, err);
-        }
+      if (runsForDate.length === 0) {
+        continue;
       }
       
-      const globalEff = totalTargets > 0 ? totalWeightedEff / totalTargets : 0;
-      setGlobalRealtimeEfficiency(Math.round(globalEff * 100) / 100);
+      // Initialize combined line data
+      if (!linesMap.has(line.lineNo)) {
+        linesMap.set(line.lineNo, {
+          lineNo: line.lineNo,
+          totalTargetPcs: 0,
+          totalSewed: 0,
+          totalRealtimeTarget: 0,
+          totalRealtimeEfficiencyWeighted: 0,
+          totalEfficiencyWeight: 0,
+          totalSAMOutput: 0,
+          totalAvailableMinutes: 0,
+          runs: [],
+          uniqueStyles: new Set() // Add a Set to track unique styles
+        });
+      }
       
-      // Calculate weighted global daily efficiency (not average of averages)
-      const weightedGlobalDaily = totalAvailableMinutesSum > 0 
-        ? (totalSAMOutputSum / totalAvailableMinutesSum) * 100 
-        : 0;
-      setGlobalDailyEfficiency(Math.round(weightedGlobalDaily * 100) / 100);
+      const combinedLine = linesMap.get(line.lineNo);
       
-      const uniqueStyleRuns = Array.from(styleRunsMap.values());
-      uniqueStyleRuns.sort((a, b) => b.dailyEfficiency - a.dailyEfficiency);
-      
-      setStyleRunData(uniqueStyleRuns);
-      setGlobalRealtimeTarget(totalRealtimeTarget);
+      for (const run of runsForDate) {
+        // Add style to unique styles set
+        combinedLine.uniqueStyles.add(run.style);
+        
+        const detailRes = await axios.get(`${API_BASE}/api/get-run-data/${run.id}`, { headers });
+        if (!detailRes.data.success) continue;
+        
+        const runData = detailRes.data;
+        const realtimeTarget = computeRealtimeTarget(runData, date);
+        const finishedGarments = calculateFinishedGarments(runData);
+        
+        // Calculate actual achieved daily efficiency based on SAM
+        const actualDailyEff = calculateActualDailyEfficiency(runData);
+        
+        // Calculate realtime efficiency (returns null if production ended)
+        const realtimeEff = calculateRealtimeEfficiency(runData, date);
+        
+        const operatorsCount = runData.run?.operators_count || 0;
+        const workingHours = runData.run?.working_hours || 0;
+        const sam = runData.run?.sam_minutes || 0;
+        
+        // Accumulate for combined line
+        combinedLine.totalTargetPcs += run.target_pcs;
+        combinedLine.totalSewed += finishedGarments;
+        combinedLine.totalRealtimeTarget += realtimeTarget;
+        combinedLine.totalSAMOutput += finishedGarments * sam;
+        combinedLine.totalAvailableMinutes += operatorsCount * workingHours * 60;
+        
+        // For weighted efficiency calculation
+        if (realtimeTarget > 0 && realtimeEff !== null) {
+          combinedLine.totalRealtimeEfficiencyWeighted += realtimeEff * realtimeTarget;
+          combinedLine.totalEfficiencyWeight += realtimeTarget;
+        }
+        
+        combinedLine.runs.push({
+          runId: run.id,
+          style: run.style,
+          targetPcs: run.target_pcs,
+          sewed: finishedGarments,
+          realtimeTarget,
+          realtimeEfficiency: realtimeEff,
+          dailyEfficiency: actualDailyEff,
+          operatorsCount,
+          workingHours,
+          sam,
+          runData
+        });
+        
+        // Accumulate for global totals
+        totalRealtimeTarget += realtimeTarget;
+        totalSAMOutputSum += finishedGarments * sam;
+        totalAvailableMinutesSum += operatorsCount * workingHours * 60;
+        
+        if (realtimeTarget > 0 && realtimeEff !== null) {
+          totalWeightedEff += realtimeEff * realtimeTarget;
+          totalTargets += realtimeTarget;
+        }
+      }
+    } catch (err) {
+      console.error(`Error fetching details for line ${line.lineNo}:`, err);
+    }
+  }
+  
+  // Calculate final combined metrics for each line
+  const combinedLines = Array.from(linesMap.values()).map(line => {
+    // Calculate combined efficiency (weighted average based on targets)
+    let combinedRealtimeEfficiency = 0;
+    if (line.totalEfficiencyWeight > 0) {
+      combinedRealtimeEfficiency = line.totalRealtimeEfficiencyWeighted / line.totalEfficiencyWeight;
+    }
+    
+    // Calculate combined daily efficiency based on SAM
+    let combinedDailyEfficiency = 0;
+    if (line.totalAvailableMinutes > 0) {
+      combinedDailyEfficiency = (line.totalSAMOutput / line.totalAvailableMinutes) * 100;
+    }
+    
+    // Get unique styles array (convert Set to Array)
+    const uniqueStyleList = Array.from(line.uniqueStyles);
+    
+    return {
+      ...line,
+      combinedRealtimeEfficiency: Math.round(combinedRealtimeEfficiency * 100) / 100,
+      combinedDailyEfficiency: Math.round(combinedDailyEfficiency * 100) / 100,
+      // For display, choose the primary style name (the first one or most common)
+      primaryStyle: uniqueStyleList.length > 0 ? uniqueStyleList[0] : '',
+      // Show unique styles (deduplicated)
+      styles: uniqueStyleList
     };
+  });
+  
+  // Sort by daily efficiency (combined)
+  combinedLines.sort((a, b) => b.combinedDailyEfficiency - a.combinedDailyEfficiency);
+  
+  const globalEff = totalTargets > 0 ? totalWeightedEff / totalTargets : 0;
+  setGlobalRealtimeEfficiency(Math.round(globalEff * 100) / 100);
+  
+  // Calculate weighted global daily efficiency (not average of averages)
+  const weightedGlobalDaily = totalAvailableMinutesSum > 0 
+    ? (totalSAMOutputSum / totalAvailableMinutesSum) * 100 
+    : 0;
+  setGlobalDailyEfficiency(Math.round(weightedGlobalDaily * 100) / 100);
+  
+  setCombinedLineData(combinedLines);
+  setGlobalRealtimeTarget(totalRealtimeTarget);
+};
     
     fetchAllStyleRuns();
     
@@ -435,9 +498,9 @@ export default function SkyrinaDashboard() {
     const headers = { Authorization: `Bearer ${token}` };
     try {
       const [summaryRes, lineRes, assignmentsRes] = await Promise.all([
-        axios.get(`/api/supervisor/summary?date=${selectedDate}`, { headers }),
-        axios.get(`/api/supervisor/line-performance?date=${selectedDate}`, { headers }),
-        axios.get(`/api/supervisor/assignments?date=${selectedDate}`, { headers })
+        axios.get(`${API_BASE}/api/supervisor/summary?date=${selectedDate}`, { headers }),
+        axios.get(`${API_BASE}/api/supervisor/line-performance?date=${selectedDate}`, { headers }),
+        axios.get(`${API_BASE}/api/supervisor/assignments?date=${selectedDate}`, { headers })
       ]);
       if (summaryRes.data.success) setSummary(summaryRes.data.summary);
       if (lineRes.data.success) setLineData(lineRes.data.lines);
@@ -461,7 +524,7 @@ export default function SkyrinaDashboard() {
     const newDate = e.target.value;
     setDate(newDate);
     fetchDashboardData(newDate, false);
-    setStyleRunData([]);
+    setCombinedLineData([]);
     setCountdown(300);
   };
 
@@ -611,17 +674,23 @@ export default function SkyrinaDashboard() {
           </div>
         )}
 
-        {/* Style Run Cards - 7 cards per row */}
-        {!loading && styleRunData.length > 0 && (
+        {/* Combined Line Cards - 7 cards per row */}
+        {!loading && combinedLineData.length > 0 && (
           <div className="grid grid-cols-7 gap-3">
-            {styleRunData.map((run, idx) => {
+            {combinedLineData.map((line, idx) => {
               // After 5:36 PM, show daily efficiency instead of real-time
-              const showRealtime = !productionEnded && run.realtimeEfficiency !== null;
+              const showRealtime = !productionEnded;
               // Use daily efficiency after production ends
-              const displayEfficiency = showRealtime ? run.realtimeEfficiency : run.dailyEfficiency;
+              const displayEfficiency = showRealtime ? line.combinedRealtimeEfficiency : line.combinedDailyEfficiency;
               const displayLabel = showRealtime ? 'Eff RT' : 'Efficiency';
               const status = getLineStatus(displayEfficiency);
-              const cardId = `${run.lineNo}-${run.style}`;
+              const cardId = `L${line.lineNo}`;
+              
+              // Calculate variance
+              const variance = line.totalSewed - line.totalRealtimeTarget;
+              const variancePercent = line.totalRealtimeTarget > 0 
+                ? Math.abs((variance / line.totalRealtimeTarget) * 100) 
+                : 0;
 
               return (
                 <div
@@ -635,21 +704,34 @@ export default function SkyrinaDashboard() {
                     ${hoveredCard === cardId ? 'shadow-lg scale-[1.01]' : ''}`}
                 >
                   {/* Header */}
-                  <div className="px-2 py-1.5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
-                    <div className="flex justify-between items-center mb-0.5">
-                      <span className="font-bold text-base text-gray-900">L{run.lineNo}</span>
-                      <div className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getStatusBgColor(status.color)}`}>
-                        {status.icon}
-                      </div>
-                    </div>
-                    <div className="text-xs font-medium text-gray-600 truncate" title={run.style}>
-                      {run.style}
-                    </div>
-                  </div>
+<div className="px-2 py-1.5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+  <div className="flex justify-between items-center mb-0.5">
+    <span className="font-bold text-base text-gray-900">L{line.lineNo}</span>
+    <div className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getStatusBgColor(status.color)}`}>
+      {status.icon}
+    </div>
+  </div>
+  
+  {/* Show styles count and tooltip */}
+  {line.styles.length === 1 ? (
+    <div className="text-xs font-medium text-gray-600 truncate" title={line.styles[0]}>
+      {line.styles[0]}
+    </div>
+  ) : (
+    <>
+      <div className="text-xs font-medium text-gray-600" title={line.styles.join(', ')}>
+        {line.styles.length} estilos
+      </div>
+      <div className="text-[8px] text-gray-400 truncate">
+        {line.styles.join(', ')}
+      </div>
+    </>
+  )}
+</div>
 
                   {/* Content */}
                   <div className="p-2">
-                    {/* Efficiency Display - Shows Eff RT before 5:36, Efficiency after */}
+                    {/* Efficiency Display */}
                     <div className="mb-2">
                       <div className="flex justify-between items-center mb-0.5">
                         <span className="text-[10px] text-gray-500">{displayLabel}</span>
@@ -669,11 +751,11 @@ export default function SkyrinaDashboard() {
                     <div className="grid grid-cols-2 gap-1 mb-2">
                       <div className="bg-gray-50 rounded p-1.5">
                         <div className="text-[9px] text-gray-500 mb-0.5">Obj RT</div>
-                        <div className="text-sm font-bold text-gray-900">{formatNumber(run.realtimeTarget)}</div>
+                        <div className="text-sm font-bold text-gray-900">{formatNumber(line.totalRealtimeTarget)}</div>
                       </div>
                       <div className="bg-gray-50 rounded p-1.5">
                         <div className="text-[9px] text-gray-500 mb-0.5">Cosido</div>
-                        <div className="text-sm font-bold text-gray-900">{formatNumber(run.sewed)}</div>
+                        <div className="text-sm font-bold text-gray-900">{formatNumber(line.totalSewed)}</div>
                       </div>
                     </div>
 
@@ -681,13 +763,13 @@ export default function SkyrinaDashboard() {
                     <div className="flex justify-between items-center pt-1.5 border-t border-gray-100">
                       <span className="text-[10px] text-gray-500">Var</span>
                       <span className={`font-mono font-bold flex items-center gap-0.5 text-xs ${
-                        run.sewed > run.realtimeTarget ? 'text-green-600' : 
-                        run.sewed < run.realtimeTarget ? 'text-red-600' : 'text-gray-600'
+                        line.totalSewed > line.totalRealtimeTarget ? 'text-green-600' : 
+                        line.totalSewed < line.totalRealtimeTarget ? 'text-red-600' : 'text-gray-600'
                       }`}>
-                        {run.sewed > run.realtimeTarget ? '↑' : run.sewed < run.realtimeTarget ? '↓' : '→'}
-                        {run.sewed > run.realtimeTarget ? '+' : ''}{formatNumber(Math.abs(run.sewed - run.realtimeTarget))}
+                        {line.totalSewed > line.totalRealtimeTarget ? '↑' : line.totalSewed < line.totalRealtimeTarget ? '↓' : '→'}
+                        {line.totalSewed > line.totalRealtimeTarget ? '+' : ''}{formatNumber(Math.abs(variance))}
                         <span className="text-[8px] opacity-75">
-                          ({run.realtimeTarget > 0 ? Math.abs(((run.sewed - run.realtimeTarget) / run.realtimeTarget * 100)).toFixed(0) : 0}%)
+                          ({variancePercent.toFixed(0)}%)
                         </span>
                       </span>
                     </div>
@@ -709,7 +791,7 @@ export default function SkyrinaDashboard() {
         )}
 
         {/* No data state */}
-        {!loading && styleRunData.length === 0 && (
+        {!loading && combinedLineData.length === 0 && (
           <div className="bg-white rounded-xl shadow p-12 text-center">
             <p className="text-gray-500 text-xl font-medium">
               No se encontraron datos para esta fecha
@@ -730,7 +812,7 @@ export default function SkyrinaDashboard() {
                       <th className="px-3 py-2 text-left">Operador lento</th>
                       <th className="px-3 py-2 text-left">Ayudado por</th>
                       <th className="px-3 py-2 text-left">Piezas</th>
-                     </tr>
+                    </tr>
                   </thead>
                   <tbody className="text-gray-900">
                     {assignments.map((a, idx) => (
