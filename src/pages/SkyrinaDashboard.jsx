@@ -381,7 +381,7 @@ const fetchAllStyleRuns = async () => {
         // Add style to unique styles set
         combinedLine.uniqueStyles.add(run.style);
         
-        const detailRes = await axios.get(`${API_BASE}/api/get-run-data/${run.id}`, { headers });
+        const detailRes = await axios.get(`/api/get-run-data/${run.id}`, { headers });
         if (!detailRes.data.success) continue;
         
         const runData = detailRes.data;
