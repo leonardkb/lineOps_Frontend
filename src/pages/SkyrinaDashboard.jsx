@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import NavSkyrina from '../components/NavSkyrina';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 function toYMD(d) {
   if (!d) return "";
@@ -279,7 +278,7 @@ export default function SkyrinaDashboard() {
       return;
     }
 
-    axios.get(`${API_BASE}/api/me`, {
+    axios.get(`/api/me`, {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => {
@@ -351,7 +350,7 @@ const fetchAllStyleRuns = async () => {
   
   for (const line of lineData) {
     try {
-      const runsRes = await axios.get(`${API_BASE}/api/line-runs/${line.lineNo}`, { headers });
+      const runsRes = await axios.get(`/api/line-runs/${line.lineNo}`, { headers });
       if (!runsRes.data.success) continue;
       
       const runsForDate = runsRes.data.runs.filter(r => toYMD(r.run_date) === date);
@@ -498,9 +497,9 @@ const fetchAllStyleRuns = async () => {
     const headers = { Authorization: `Bearer ${token}` };
     try {
       const [summaryRes, lineRes, assignmentsRes] = await Promise.all([
-        axios.get(`${API_BASE}/api/supervisor/summary?date=${selectedDate}`, { headers }),
-        axios.get(`${API_BASE}/api/supervisor/line-performance?date=${selectedDate}`, { headers }),
-        axios.get(`${API_BASE}/api/supervisor/assignments?date=${selectedDate}`, { headers })
+        axios.get(`/api/supervisor/summary?date=${selectedDate}`, { headers }),
+        axios.get(`/api/supervisor/line-performance?date=${selectedDate}`, { headers }),
+        axios.get(`/api/supervisor/assignments?date=${selectedDate}`, { headers })
       ]);
       if (summaryRes.data.success) setSummary(summaryRes.data.summary);
       if (lineRes.data.success) setLineData(lineRes.data.lines);
