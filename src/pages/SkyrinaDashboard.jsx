@@ -64,7 +64,6 @@ const isProductionEnded = (selectedDate) => {
 const calculateRealtimeEfficiency = (runData, selectedDate) => {
   if (!runData || !selectedDate) return null;
   
-  // If production has ended, return null to indicate we should show daily efficiency
   if (isProductionEnded(selectedDate)) {
     return null;
   }
@@ -72,10 +71,8 @@ const calculateRealtimeEfficiency = (runData, selectedDate) => {
   const now = new Date();
   const todayStr = selectedDate;
   
-  // Production timeline: 8:00 AM start
   const PRODUCTION_START = new Date(`${todayStr}T08:00:00`);
   
-  // Get the last slot end time
   const slots = (runData.slots || [])
     .map(slot => {
       const end = new Date(`${todayStr}T${slot.slot_end}`);
@@ -83,40 +80,32 @@ const calculateRealtimeEfficiency = (runData, selectedDate) => {
     })
     .filter(s => s.end);
   
-  // Find the latest end time from slots
   const PRODUCTION_END = slots.length > 0 
     ? new Date(Math.max(...slots.map(s => s.end.getTime())))
     : new Date(`${todayStr}T17:36:00`);
   
-  // If production hasn't started yet
   if (now < PRODUCTION_START) {
     return 0;
   }
   
-  // If production has ended for the day
   if (now >= PRODUCTION_END) {
     return null;
   }
   
-  // Calculate elapsed time in minutes
   const elapsedMilliseconds = now - PRODUCTION_START;
   const elapsedMinutes = elapsedMilliseconds / (1000 * 60);
   
-  // Get actual working hours so far (in minutes)
   const actualWorkingMinutes = Math.min(
     elapsedMinutes,
     (PRODUCTION_END - PRODUCTION_START) / (1000 * 60)
   );
   
-  // Calculate SAM produced so far (only from packing operations)
   const sewedSoFar = calculateFinishedGarments(runData);
   const samProducedSoFar = sewedSoFar * (runData.run?.sam_minutes || 0);
   
-  // Calculate available minutes so far (operators * actual time elapsed)
   const operatorsCount = runData.run?.operators_count || 0;
   const availableMinutesSoFar = operatorsCount * actualWorkingMinutes;
   
-  // Calculate real-time efficiency
   const realtimeEfficiency = availableMinutesSoFar > 0 
     ? (samProducedSoFar / availableMinutesSoFar) * 100 
     : 0;
@@ -128,7 +117,6 @@ const calculateRealtimeEfficiency = (runData, selectedDate) => {
 const computeRealtimeTarget = (runData, selectedDate) => {
   if (!runData || !selectedDate) return 0;
   
-  // If production has ended, return the full target
   if (isProductionEnded(selectedDate)) {
     return runData.run?.target_pcs || 0;
   }
@@ -136,10 +124,8 @@ const computeRealtimeTarget = (runData, selectedDate) => {
   const now = new Date();
   const todayStr = selectedDate;
   
-  // Production timeline: 8:00 AM start
   const PRODUCTION_START = new Date(`${todayStr}T08:00:00`);
   
-  // Get the last slot end time
   const slots = (runData.slots || [])
     .map(slot => {
       const end = new Date(`${todayStr}T${slot.slot_end}`);
@@ -147,7 +133,6 @@ const computeRealtimeTarget = (runData, selectedDate) => {
     })
     .filter(s => s.end);
   
-  // Find the latest end time from slots
   const PRODUCTION_END = slots.length > 0 
     ? new Date(Math.max(...slots.map(s => s.end.getTime())))
     : new Date(`${todayStr}T17:36:00`);
@@ -234,7 +219,7 @@ export default function SkyrinaDashboard() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [summary, setSummary] = useState(null);
   const [lineData, setLineData] = useState([]);
-  const [runDataMap, setRunDataMap] = useState({}); // Store all run data by line
+  const [runDataMap, setRunDataMap] = useState({});
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -319,7 +304,9 @@ export default function SkyrinaDashboard() {
       let totalGlobalTargets = 0;
       let totalSAMOutputSum = 0;
       let totalAvailableMinutesSum = 0;
-      let totalGlobalRealtimeTarget = 0;
+      
+      // CRITICAL FIX: Use per-line targets like Dashboard.jsx
+      const lineTargets = {};
       
       for (const line of lineData) {
         try {
@@ -330,6 +317,7 @@ export default function SkyrinaDashboard() {
           
           if (runsForDate.length === 0) {
             newRunDataMap[line.lineNo] = [];
+            lineTargets[line.lineNo] = 0;
             continue;
           }
           
@@ -348,15 +336,16 @@ export default function SkyrinaDashboard() {
             const workingHours = runData.run?.working_hours || 0;
             const sam = runData.run?.sam_minutes || 0;
             
-            // Calculate for global totals
-            totalSAMOutputSum += finishedGarments * sam;
-            totalAvailableMinutesSum += operatorsCount * workingHours * 60;
-            totalGlobalRealtimeTarget += realtimeTarget;
+            const hasProductionData = finishedGarments > 0 || (runData.operations && runData.operations.length > 0);
             
-            // Weighted real-time efficiency (only count non-null values)
-            if (realtimeTarget > 0 && realtimeEff !== null) {
-              totalGlobalWeightedEff += realtimeEff * realtimeTarget;
-              totalGlobalTargets += realtimeTarget;
+            if (hasProductionData) {
+              totalSAMOutputSum += finishedGarments * sam;
+              totalAvailableMinutesSum += operatorsCount * workingHours * 60;
+              
+              if (realtimeTarget > 0 && realtimeEff !== null) {
+                totalGlobalWeightedEff += realtimeEff * realtimeTarget;
+                totalGlobalTargets += realtimeTarget;
+              }
             }
             
             lineRuns.push({
@@ -372,21 +361,43 @@ export default function SkyrinaDashboard() {
               operatorsCount,
               workingHours,
               sam,
-              runData
+              runData,
+              hasProductionData
             });
           }
           
-          newRunDataMap[line.lineNo] = lineRuns;
+          if (lineRuns.length > 0) {
+            newRunDataMap[line.lineNo] = lineRuns;
+            
+            // CRITICAL FIX: Calculate per-line real-time target like Dashboard.jsx
+            // Use the first run's real-time target as the line target
+            // This matches Dashboard.jsx behavior where newTargets[line.lineNo] = computeRealtimeTarget(lineRuns[0], date)
+            if (lineRuns.length > 0) {
+              const firstRun = lineRuns[0];
+              const lineRealtimeTarget = computeRealtimeTarget(firstRun.runData, date);
+              lineTargets[line.lineNo] = lineRealtimeTarget;
+            } else {
+              lineTargets[line.lineNo] = 0;
+            }
+          } else {
+            lineTargets[line.lineNo] = 0;
+          }
           
         } catch (err) {
           console.error(`Error fetching details for line ${line.lineNo}:`, err);
           newRunDataMap[line.lineNo] = [];
+          lineTargets[line.lineNo] = 0;
         }
       }
       
       setRunDataMap(newRunDataMap);
       
-      // Calculate global metrics
+      // CRITICAL FIX: Sum per-line targets, NOT per-run targets
+      // This matches Dashboard.jsx behavior
+      const targetSum = Object.values(lineTargets).reduce((a, b) => a + b, 0);
+      setGlobalRealtimeTarget(targetSum);
+      
+      // Calculate global real-time efficiency using weighted average
       const globalRealtimeEff = totalGlobalTargets > 0 
         ? (totalGlobalWeightedEff / totalGlobalTargets) 
         : 0;
@@ -394,7 +405,6 @@ export default function SkyrinaDashboard() {
         ? (totalSAMOutputSum / totalAvailableMinutesSum) * 100 
         : 0;
       
-      setGlobalRealtimeTarget(totalGlobalRealtimeTarget);
       setGlobalRealtimeEfficiency(Math.round(globalRealtimeEff * 100) / 100);
       setGlobalDailyEfficiency(Math.round(globalDailyEff * 100) / 100);
     };
@@ -492,6 +502,8 @@ export default function SkyrinaDashboard() {
     let totalTarget = 0;
     
     for (const run of runs) {
+      if (!run.hasProductionData) continue;
+      
       const eff = useRealtime && run.realtimeEff !== null ? run.realtimeEff : run.dailyEff;
       const target = useRealtime && run.realtimeEff !== null ? run.realtimeTarget : run.targetPcs;
       
@@ -510,16 +522,17 @@ export default function SkyrinaDashboard() {
     return runs.reduce((sum, run) => sum + run.finishedGarments, 0);
   };
 
-  // Calculate total realtime target for a line
-  const calculateLineTotalRealtimeTarget = (runs) => {
+  // Calculate total realtime target for a line - now uses per-line target approach
+  const calculateLineTotalRealtimeTarget = (runs, lineNo) => {
     if (!runs || runs.length === 0) return 0;
-    return runs.reduce((sum, run) => sum + run.realtimeTarget, 0);
-  };
-
-  // Calculate total target for a line
-  const calculateLineTotalTarget = (runs) => {
-    if (!runs || runs.length === 0) return 0;
-    return runs.reduce((sum, run) => sum + run.targetPcs, 0);
+    // For display purposes, sum the realtime targets of all runs in the line
+    // But for the global META RT, we use per-line targets
+    return runs.reduce((sum, run) => {
+      if (run.hasProductionData && run.realtimeTarget > 0) {
+        return sum + run.realtimeTarget;
+      }
+      return sum;
+    }, 0);
   };
 
   // Prepare line data with calculated efficiency for sorting
@@ -529,22 +542,25 @@ export default function SkyrinaDashboard() {
     for (const [lineNo, runs] of Object.entries(runDataMap)) {
       if (!runs || runs.length === 0) continue;
       
-      const lineRealtimeEfficiency = calculateLineWeightedEfficiency(runs, true);
-      const lineDailyEfficiency = calculateLineWeightedEfficiency(runs, false);
+      const validRuns = runs.filter(run => run.hasProductionData);
+      if (validRuns.length === 0) continue;
+      
+      const lineRealtimeEfficiency = calculateLineWeightedEfficiency(validRuns, true);
+      const lineDailyEfficiency = calculateLineWeightedEfficiency(validRuns, false);
       const displayEfficiency = !productionEnded && lineRealtimeEfficiency > 0 
         ? lineRealtimeEfficiency 
         : lineDailyEfficiency;
       
       linesWithEfficiency.push({
         lineNo,
-        runs,
+        runs: validRuns,
+        allRuns: runs,
         efficiency: displayEfficiency,
         lineRealtimeEfficiency,
         lineDailyEfficiency
       });
     }
     
-    // Sort by efficiency (highest to lowest)
     linesWithEfficiency.sort((a, b) => b.efficiency - a.efficiency);
     
     return linesWithEfficiency;
@@ -647,13 +663,17 @@ export default function SkyrinaDashboard() {
           </div>
         )}
 
-        {/* Line Cards - Sorted by efficiency (highest to lowest) - NO NAVIGATION */}
+        {/* Line Cards */}
         {!loading && Object.keys(runDataMap).length > 0 && (
           <div className="grid grid-cols-7 gap-3">
             {prepareSortedLines().map(({ lineNo, runs, efficiency, lineRealtimeEfficiency, lineDailyEfficiency }) => {
-              // Calculate aggregated metrics for the line
               const lineTotalFinished = calculateLineTotalFinished(runs);
-              const lineTotalRealtimeTarget = calculateLineTotalRealtimeTarget(runs);
+              const lineTotalRealtimeTarget = runs.reduce((sum, run) => {
+                if (run.hasProductionData && run.realtimeTarget > 0) {
+                  return sum + run.realtimeTarget;
+                }
+                return sum;
+              }, 0);
               
               const showRealtime = !productionEnded && lineRealtimeEfficiency > 0;
               const displayEfficiency = showRealtime ? lineRealtimeEfficiency : lineDailyEfficiency;
@@ -677,7 +697,6 @@ export default function SkyrinaDashboard() {
                     border-t border-r border-b border-gray-200
                     ${hoveredCard === cardId ? 'shadow-lg scale-[1.01]' : ''}`}
                 >
-                  {/* Header */}
                   <div className="px-2 py-1.5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
                     <div className="flex justify-between items-center mb-0.5">
                       <span className="font-bold text-base text-gray-900">L{lineNo}</span>
@@ -686,15 +705,12 @@ export default function SkyrinaDashboard() {
                       </div>
                     </div>
                     
-                    {/* Style names - show all styles in this line */}
                     <div className="text-xs font-medium text-gray-600 truncate" title={runs.map(r => r.style).join(', ')}>
                       {runs.map(r => r.style).join(' / ')}
                     </div>
                   </div>
 
-                  {/* Content */}
                   <div className="p-2">
-                    {/* Efficiency Display */}
                     <div className="mb-2">
                       <div className="flex justify-between items-center mb-0.5">
                         <span className="text-[10px] text-gray-500">{displayLabel}</span>
@@ -710,7 +726,6 @@ export default function SkyrinaDashboard() {
                       </div>
                     </div>
 
-                    {/* Stats - Two columns with totals */}
                     <div className="grid grid-cols-2 gap-1 mb-2">
                       <div className="bg-gray-50 rounded p-1.5">
                         <div className="text-[9px] text-gray-500 mb-0.5">Obj RT</div>
@@ -722,7 +737,6 @@ export default function SkyrinaDashboard() {
                       </div>
                     </div>
 
-                    {/* Variance */}
                     <div className="flex justify-between items-center pt-1.5 border-t border-gray-100">
                       <span className="text-[10px] text-gray-500">Var</span>
                       <span className={`font-mono font-bold flex items-center gap-0.5 text-xs ${
