@@ -126,10 +126,9 @@ function HourlyPlanCard({
         <table className="min-w-[620px] w-full border-separate border-spacing-0">
           <thead>
             <tr>
-              <th className="sticky left-0 z-10 bg-gray-50 
-              px-3 py-2 text-left text-xs font-semibold text-gray-700 
-              border-y border-gray-200 border-r border-gray-200
-               rounded-tl-xl after:absolute after:top-0 after:right-0 after:h-full after:w-px after:bg-gray-200">
+              <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left text-xs 
+              font-semibold text-gray-700 border-y border-gray-200 
+              border-r border-gray-200 rounded-tl-xl after:absolute after:top-0 after:right-0 after:h-full after:w-px after:bg-gray-200">
                 Fila
               </th>
               {slots.map((s, i) => (
@@ -625,6 +624,44 @@ export default function LineLeaderPage() {
     }
     return map;
   }, [runData]);
+
+  // ========== Calculate total capacity per operator from t1-t5 times ==========
+  // EXACTLY matches calcCapacityPerHourForMultipleOperations logic
+  const getOperatorTotalCapacity = (operatorId) => {
+    const operatorBlock = runData?.operations?.find(b => b.operator?.id === operatorId);
+    if (!operatorBlock?.operations?.length) return 0;
+    
+    // Sum ALL t1-t5 values from ALL operations
+    let totalSecondsSum = 0;
+    
+    operatorBlock.operations.forEach(operation => {
+      // Add each time value if it exists and is > 0
+      const t1 = Number(operation.t1_sec);
+      const t2 = Number(operation.t2_sec);
+      const t3 = Number(operation.t3_sec);
+      const t4 = Number(operation.t4_sec);
+      const t5 = Number(operation.t5_sec);
+      
+      if (t1 > 0) totalSecondsSum += t1;
+      if (t2 > 0) totalSecondsSum += t2;
+      if (t3 > 0) totalSecondsSum += t3;
+      if (t4 > 0) totalSecondsSum += t4;
+      if (t5 > 0) totalSecondsSum += t5;
+    });
+    
+    if (totalSecondsSum <= 0) return 0;
+    
+    // CRITICAL: Divide by 5 (number of time studies per operation)
+    // This matches the logic in calcCapacityPerHourForMultipleOperations
+    const averageSecondsPerPiece = totalSecondsSum / 5;
+    
+    // Calculate pieces per hour
+    const capacityPerHour = 3600 / averageSecondsPerPiece;
+    
+    // Return with 3 decimal places for display
+    return capacityPerHour;
+  };
+  // ============================================================================
 
   // Updated handleSewedChange with lock check
   const handleSewedChange = useCallback((opId, slotLabel, value) => {
@@ -1232,10 +1269,8 @@ export default function LineLeaderPage() {
                         const currentValue = getOperatorValueForSlot(operatorId, selectedTimeSlot);
                         const isLocked = isSlotLocked(operatorId, selectedTimeSlot);
                         
-                        // Get operator's block for capacity info
-                        const operatorBlock = runData?.operations?.find(b => b.operator?.id === operatorId);
-                        const firstOperation = operatorBlock?.operations?.[0];
-                        const capacity = firstOperation?.capacity_per_hour || 0;
+                        // Calculate total capacity for this operator across all operations from t1-t5 times
+                        const totalCapacity = getOperatorTotalCapacity(operatorId);
                         
                         // Calculate cumulative total for this operator based on ALL inputs across all slots
                         const cumulativeTotal = getOperatorTotalCumulative(operatorId);
@@ -1249,7 +1284,7 @@ export default function LineLeaderPage() {
                               {op.operator_name || 'Sin nombre'}
                             </div>
                             <div className="text-xs font-medium text-blue-600 mb-2">
-                              Cap: {capacity} pcs/h
+                              Cap: {totalCapacity.toFixed(3)} pcs/h
                             </div>
                             <div className="relative">
                               <input
@@ -1294,6 +1329,7 @@ export default function LineLeaderPage() {
                       <div className="mt-4 space-y-4 border-t pt-4">
                         {operatorsList.map((op) => {
                           const block = runData?.operations?.find(b => b.operator?.id === op.id);
+                          const operatorTotalCapacity = getOperatorTotalCapacity(op.id);
                           
                           // Calculate operator cumulative total across all slots
                           const operatorCumulativeTotal = getOperatorTotalCumulative(op.id);
@@ -1305,18 +1341,38 @@ export default function LineLeaderPage() {
                                   Operador {op.operator_no} - {op.operator_name}
                                 </div>
                                 <div className="text-sm bg-gray-200 px-3 py-1 rounded-full">
-                                  Total acumulado: {operatorCumulativeTotal} pcs
+                                  Capacidad total: {operatorTotalCapacity.toFixed(3)} pcs/h
+                                </div>
+                              </div>
+                              <div className="flex justify-between items-center mb-3">
+                                <div className="text-sm text-gray-500">Total acumulado:</div>
+                                <div className="text-sm font-semibold bg-gray-200 px-3 py-1 rounded-full">
+                                  {operatorCumulativeTotal} pcs
                                 </div>
                               </div>
                               <div className="space-y-2">
                                 {block?.operations?.map((operation) => {
                                   const opTotal = getOperationTotal(operation.id);
+                                  // Calculate individual operation capacity from t1-t5 times
+                                  let opCapacity = 0;
+                                  const t1 = Number(operation.t1_sec);
+                                  const t2 = Number(operation.t2_sec);
+                                  const t3 = Number(operation.t3_sec);
+                                  const t4 = Number(operation.t4_sec);
+                                  const t5 = Number(operation.t5_sec);
+                                  
+                                  const times = [t1, t2, t3, t4, t5].filter(t => t > 0);
+                                  if (times.length > 0) {
+                                    const avgSeconds = times.reduce((a, b) => a + b, 0) / times.length;
+                                    opCapacity = 3600 / avgSeconds;
+                                  }
+                                  
                                   return (
                                     <div key={operation.id} className="flex justify-between items-center text-sm">
                                       <span className="text-gray-600">{operation.operation_name}</span>
                                       <div className="flex items-center gap-4">
                                         <span className="text-xs text-gray-500">
-                                          Cap: {operation.capacity_per_hour || 0} pcs/h
+                                          Cap: {opCapacity.toFixed(3)} pcs/h
                                         </span>
                                         <span className="font-medium text-gray-900">{opTotal} pcs</span>
                                       </div>
