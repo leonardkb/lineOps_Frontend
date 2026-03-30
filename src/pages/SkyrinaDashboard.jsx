@@ -200,9 +200,11 @@ const isProductionEnded = (selectedDate) => {
 };
 
 // Helper function to calculate real-time efficiency
+// Helper function to calculate real-time efficiency
 const calculateRealtimeEfficiency = (runData, selectedDate) => {
   if (!runData || !selectedDate) return null;
   
+  // If production has ended, return null to indicate we should show daily efficiency instead
   if (isProductionEnded(selectedDate)) {
     return null;
   }
@@ -210,8 +212,10 @@ const calculateRealtimeEfficiency = (runData, selectedDate) => {
   const now = new Date();
   const todayStr = selectedDate;
   
+  // Production timeline: 8:00 AM start
   const PRODUCTION_START = new Date(`${todayStr}T08:00:00`);
   
+  // Get the last slot end time
   const slots = (runData.slots || [])
     .map(slot => {
       const end = new Date(`${todayStr}T${slot.slot_end}`);
@@ -219,32 +223,40 @@ const calculateRealtimeEfficiency = (runData, selectedDate) => {
     })
     .filter(s => s.end);
   
+  // Find the latest end time from slots
   const PRODUCTION_END = slots.length > 0 
     ? new Date(Math.max(...slots.map(s => s.end.getTime())))
     : new Date(`${todayStr}T17:36:00`);
   
+  // If production hasn't started yet
   if (now < PRODUCTION_START) {
     return 0;
   }
   
+  // If production has ended for the day
   if (now >= PRODUCTION_END) {
     return null;
   }
   
+  // Calculate elapsed time in minutes
   const elapsedMilliseconds = now - PRODUCTION_START;
   const elapsedMinutes = elapsedMilliseconds / (1000 * 60);
   
+  // Get actual working hours so far (in minutes)
   const actualWorkingMinutes = Math.min(
     elapsedMinutes,
     (PRODUCTION_END - PRODUCTION_START) / (1000 * 60)
   );
   
+  // Calculate SAM produced so far (only from packing operations)
   const sewedSoFar = calculateFinishedGarments(runData);
   const samProducedSoFar = sewedSoFar * (runData.run?.sam_minutes || 0);
   
+  // Calculate available minutes so far (operators * actual time elapsed)
   const operatorsCount = runData.run?.operators_count || 0;
   const availableMinutesSoFar = operatorsCount * actualWorkingMinutes;
   
+  // Calculate real-time efficiency
   const realtimeEfficiency = availableMinutesSoFar > 0 
     ? (samProducedSoFar / availableMinutesSoFar) * 100 
     : 0;
@@ -296,6 +308,30 @@ const computeRealtimeTarget = (runData, selectedDate) => {
   }
   
   return 0;
+};
+
+// Helper function to get elapsed minutes since production start
+const getElapsedMinutes = (selectedDate) => {
+  if (!selectedDate) return 0;
+  
+  const now = new Date();
+  const todayStr = selectedDate;
+  const PRODUCTION_START = new Date(`${todayStr}T08:00:00`);
+  
+  // Get slots end time from run data (or use default 17:36)
+  // This function should be called with runData context
+  return 0; // Will be replaced with proper implementation
+};
+
+// Helper function to get total production minutes in a day
+const getTotalProductionMinutes = (selectedDate) => {
+  if (!selectedDate) return 0;
+  
+  const todayStr = selectedDate;
+  const PRODUCTION_START = new Date(`${todayStr}T08:00:00`);
+  const PRODUCTION_END = new Date(`${todayStr}T17:36:00`);
+  
+  return (PRODUCTION_END - PRODUCTION_START) / (1000 * 60);
 };
 
 const getLineStatus = (efficiency) => {
@@ -431,7 +467,7 @@ export default function SkyrinaDashboard() {
   }, [autoRefresh, date]);
 
   // Fetch all run details for each line - grouped by line
-  // Fetch all run details for each line - grouped by line
+// Fetch all run details for each line - grouped by line
 useEffect(() => {
   const fetchAllRunDetails = async () => {
     if (!lineData.length || !date) return;
@@ -440,11 +476,11 @@ useEffect(() => {
     const headers = { Authorization: `Bearer ${token}` };
     
     const newRunDataMap = {};
-    let totalGlobalWeightedEff = 0;
-    let totalGlobalTargets = 0;
-    
-    // Use per-line targets
     const lineTargets = {};
+    
+    // IMPORTANT: Declare these outside the line loop to accumulate across ALL lines
+    let totalWeightedRealtimeEff = 0;
+    let totalWeightedRealtimeTarget = 0;
     
     for (const line of lineData) {
       try {
@@ -467,9 +503,12 @@ useEffect(() => {
           
           const runData = detailRes.data;
           const finishedGarments = calculateFinishedGarments(runData);
-          const realtimeTarget = computeRealtimeTarget(runData, date);
-          const realtimeEff = calculateRealtimeEfficiency(runData, date);
+          
+          // Get real-time values using the same functions as Dashboard.jsx
+          const rtEff = calculateRealtimeEfficiency(runData, date);
+          const rtTarget = computeRealtimeTarget(runData, date);
           const dailyEff = calculateActualDailyEfficiency(runData);
+          
           const operatorsCount = runData.run?.operators_count || 0;
           const workingHours = runData.run?.working_hours || 0;
           const sam = runData.run?.sam_minutes || 0;
@@ -477,15 +516,22 @@ useEffect(() => {
           // Ensure values are valid numbers
           const safeFinishedGarments = (isNaN(finishedGarments) || !isFinite(finishedGarments)) ? 0 : finishedGarments;
           const safeDailyEff = (isNaN(dailyEff) || !isFinite(dailyEff)) ? 0 : dailyEff;
-          const safeRealtimeEff = (realtimeEff !== null && (isNaN(realtimeEff) || !isFinite(realtimeEff))) ? 0 : realtimeEff;
+          
+          // Handle realtime efficiency (can be null)
+          let safeRealtimeEff = 0;
+          if (rtEff !== null && !isNaN(rtEff) && isFinite(rtEff)) {
+            safeRealtimeEff = rtEff;
+          }
           
           const hasProductionData = safeFinishedGarments > 0 || (runData.operations && runData.operations.length > 0);
           
-          if (hasProductionData) {
-            if (realtimeTarget > 0 && safeRealtimeEff !== null && safeRealtimeEff > 0) {
-              totalGlobalWeightedEff += safeRealtimeEff * realtimeTarget;
-              totalGlobalTargets += realtimeTarget;
-            }
+          // EXACTLY MATCH Dashboard.jsx condition
+          // Dashboard.jsx uses: if (rtTarget > 0 && rtEff !== null)
+          if (rtTarget > 0 && rtEff !== null) {
+            totalWeightedRealtimeEff += rtEff * rtTarget;
+            totalWeightedRealtimeTarget += rtTarget;
+            
+            console.log(`Adding to global: line ${line.lineNo}, style ${run.style}, eff=${rtEff}, target=${rtTarget}, weighted=${rtEff * rtTarget}`);
           }
           
           lineRuns.push({
@@ -495,7 +541,7 @@ useEffect(() => {
             styleGroupName: runData.run?.style_group_name,
             targetPcs: run.target_pcs,
             finishedGarments: safeFinishedGarments,
-            realtimeTarget,
+            realtimeTarget: rtTarget,
             realtimeEff: safeRealtimeEff,
             dailyEff: safeDailyEff,
             operatorsCount,
@@ -530,19 +576,21 @@ useEffect(() => {
     
     setRunDataMap(newRunDataMap);
     
-    // Sum per-line targets
+    // Sum per-line targets for global real-time target
     const targetSum = Object.values(lineTargets).reduce((a, b) => a + b, 0);
     setGlobalRealtimeTarget(targetSum);
     
-    // Calculate global real-time efficiency using weighted average
-    const globalRealtimeEff = totalGlobalTargets > 0 
-      ? (totalGlobalWeightedEff / totalGlobalTargets) 
-      : 0;
+    console.log(`Global totals - Weighted Eff Sum: ${totalWeightedRealtimeEff}, Weighted Target Sum: ${totalWeightedRealtimeTarget}`);
     
-    setGlobalRealtimeEfficiency(Math.round(globalRealtimeEff * 100) / 100);
+    // Calculate global real-time efficiency using weighted average (EXACTLY matches Dashboard.jsx)
+    let correctGlobalRealtimeEfficiency = 0;
+    if (!productionEnded && totalWeightedRealtimeTarget > 0) {
+      correctGlobalRealtimeEfficiency = totalWeightedRealtimeEff / totalWeightedRealtimeTarget;
+      console.log(`Calculated global RT efficiency: ${correctGlobalRealtimeEfficiency}%`);
+    }
+    setGlobalRealtimeEfficiency(Math.round(correctGlobalRealtimeEfficiency * 100) / 100);
     
-    // IMPORTANT: Don't recalculate daily efficiency here - use the server's calculation
-    // The daily efficiency should come from the summary endpoint
+    // IMPORTANT: Daily efficiency comes from server's summary endpoint
     if (summary && summary.overallEfficiency !== undefined) {
       setGlobalDailyEfficiency(summary.overallEfficiency);
     }
@@ -552,7 +600,7 @@ useEffect(() => {
   
   const interval = setInterval(fetchAllRunDetails, 60000);
   return () => clearInterval(interval);
-}, [lineData, date, productionEnded, summary]); // Add summary as dependency
+}, [lineData, date, productionEnded, summary]);
 
   const fetchDashboardData = async (selectedDate, isRefresh = false) => {
     if (!isRefresh) setLoading(true);
