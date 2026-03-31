@@ -6,6 +6,8 @@ import EditWorkingHoursModal from "./EditWorkingHoursModal";
 import DeleteOperatorModal from "./DeleteOperatorModal";
 import EditEfficiencyModal from "./EditEfficiencyModal";
 import EditOperatorModal from "./EditOperatorModal";
+import OperatorCountEditModal from "./OperatorCountEditModal";
+
 // Helper to ensure dates are compared as YYYY-MM-DD strings
 const normalizeDate = (dateStr) => {
   if (!dateStr) return "";
@@ -30,9 +32,8 @@ export default function SavedRunsViewer({ onBack }) {
   const [message, setMessage] = useState("");
   const [activePanel, setActivePanel] = useState("select"); // select, summary, operations
   const [showEditEfficiency, setShowEditEfficiency] = useState(false);
-  const [isUpdatingEfficiency, setIsUpdatingEfficiency] = useState(false);
+const [isUpdatingEfficiency, setIsUpdatingEfficiency] = useState(false);
   const [operatorToEdit, setOperatorToEdit] = useState(null);
-  
   // Operators state
   const [operators, setOperators] = useState([]);
   const [showAddOperator, setShowAddOperator] = useState(false);
@@ -45,6 +46,9 @@ export default function SavedRunsViewer({ onBack }) {
 
   // Date filter state
   const [filterDate, setFilterDate] = useState("");
+
+  const [showOperatorModal, setShowOperatorModal] = useState(false);
+
 
   // Cargar todas las corridas guardadas
   useEffect(() => {
@@ -119,17 +123,7 @@ export default function SavedRunsViewer({ onBack }) {
       setLoading(false);
     }
   };
-  // Handle operator no updated
-  const handleOperatorUpdated = (updatedOperator) => {
-  setOperators(operators.map(op => 
-    op.id === updatedOperator.id ? updatedOperator : op
-  ));
-  setMessage(`✅ Operador actualizado correctamente`);
-  // Refresh the run data to get updated operations
-  if (selectedRun) {
-    handleSelectRun(selectedRun);
-  }
-};
+
   // Handle operator added
   const handleOperatorAdded = (newOperator) => {
     setOperators([...operators, { ...newOperator, operations_count: 0 }]);
@@ -138,6 +132,19 @@ export default function SavedRunsViewer({ onBack }) {
     if (selectedRun) {
       handleSelectRun(selectedRun);
     }
+  };
+
+  const handleOperatorUpdate = (updatedData) => {
+    // Fix: update nested run object properly
+    setRunData({
+      ...runData,
+      run: {
+        ...runData.run,
+        operators_count: updatedData.operatorsCount,
+        target_pcs: updatedData.newTarget,
+        target_per_hour: updatedData.newTargetPerHour,
+      }
+    });
   };
 
   const handleUpdateWorkingHours = async (newWorkingHours) => {
@@ -174,6 +181,17 @@ export default function SavedRunsViewer({ onBack }) {
       setIsUpdatingWorkingHours(false);
     }
   };
+
+  const handleOperatorUpdated = (updatedOperator) => {
+  setOperators(operators.map(op => 
+    op.id === updatedOperator.id ? updatedOperator : op
+  ));
+  setMessage(`✅ Operador actualizado correctamente`);
+  // Refresh the run data to get updated operations
+  if (selectedRun) {
+    handleSelectRun(selectedRun);
+  }
+};
 
   const handleUpdateEfficiency = async (newEfficiency) => {
   if (!selectedRun) return;
@@ -372,8 +390,7 @@ export default function SavedRunsViewer({ onBack }) {
                   type="date"
                   value={filterDate}
                   onChange={(e) => setFilterDate(e.target.value)}
-                  className="w-full rounded-xl border border-gray-200 
-                  px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
                   placeholder="Filtrar por fecha"
                 />
               </div>
@@ -401,8 +418,7 @@ export default function SavedRunsViewer({ onBack }) {
                 {filteredRuns.map((run) => (
                   <div
                     key={run.id}
-                    className="rounded-xl border border-gray-200 p-4 
-                    hover:border-gray-300 hover:bg-gray-50 cursor-pointer transition flex flex-col h-full"
+                    className="rounded-xl border border-gray-200 p-4 hover:border-gray-300 hover:bg-gray-50 cursor-pointer transition flex flex-col h-full"
                     onClick={() => handleSelectRun(run.id)}
                   >
                     <div className="flex-grow">
@@ -457,8 +473,7 @@ export default function SavedRunsViewer({ onBack }) {
                 type="date"
                 value={newDate}
                 onChange={(e) => setNewDate(e.target.value)}
-                className="mt-1 block w-full rounded-xl 
-                border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-gray-900/10"
+                className="mt-1 block w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-gray-900/10"
               />
             </label>
             <div className="flex justify-end gap-3">
@@ -496,7 +511,16 @@ export default function SavedRunsViewer({ onBack }) {
                   </span>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-3 text-sm text-gray-600">
-                  <span>Operadores: {runData.run.operators_count}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Operadores: {runData.run.operators_count}</span>
+                    <button
+                      onClick={() => setShowOperatorModal(true)}
+                      className="ml-1 text-blue-600 hover:text-blue-800"
+                      title="Editar número de operadores"
+                    >
+                      ✎
+                    </button>
+                  </div>
                   <span className="flex items-center gap-1">
                     Horas trabajadas: {runData.run.working_hours}
                     <button
@@ -508,17 +532,16 @@ export default function SavedRunsViewer({ onBack }) {
                     </button>
                   </span>
                   <span>SAM: {runData.run.sam_minutes} min</span>
-                  {/* In the run details section, replace the efficiency display with: */}
-<span className="flex items-center gap-1">
-  Eficiencia: {Math.round(runData.run.efficiency * 100)}%
-  <button
-    onClick={() => setShowEditEfficiency(true)}
-    className="ml-1 text-blue-600 hover:text-blue-800"
-    title="Editar eficiencia"
-  >
-    ✎
-  </button>
-</span>
+                  <span className="flex items-center gap-1">
+                     Eficiencia: {Math.round(runData.run.efficiency * 100)}%
+                   <button
+                    onClick={() => setShowEditEfficiency(true)}
+                     className="ml-1 text-blue-600 hover:text-blue-800"
+                         title="Editar eficiencia"
+                       >
+                        ✎
+                     </button>
+                    </span>
                 </div>
               </div>
 
@@ -598,46 +621,46 @@ export default function SavedRunsViewer({ onBack }) {
                   {operators && operators.length > 0 ? (
                     <div className="space-y-3">
                       {operators.map((operator) => (
-  <div key={operator.id} className="rounded-lg border border-gray-200 p-4">
-    <div className="flex items-center justify-between mb-2">
-      <div className="font-semibold text-gray-900">
-        Operador {operator.operator_no}
-      </div>
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => setOperatorToEdit(operator)}
-          className="text-sm text-blue-600 hover:text-blue-800"
-          title="Editar operador"
-        >
-          ✎
-        </button>
-        <div className="text-sm text-gray-600">
-          {operator.operations_count || 0} operaciones
-        </div>
-        <button
-          onClick={() => setOperatorToDelete(operator)}
-          className="text-sm text-red-600 hover:text-red-800"
-          title="Eliminar operador"
-        >
-          ✕
-        </button>
-      </div>
-    </div>
+                        <div key={operator.id} className="rounded-lg border border-gray-200 p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="font-semibold text-gray-900">
+                              Operador {operator.operator_no}
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={() => setOperatorToEdit(operator)}
+                                className="text-blue-600 hover:text-blue-800"
+                                title="Editar operador"
+                              >
+                                ✎
+                              </button>
+                              <div className="text-sm text-gray-600">
+                                {operator.operations_count || 0} operaciones
+                              </div>
+                              <button
+                                onClick={() => setOperatorToDelete(operator)}
+                                className="text-red-600 hover:text-red-800"
+                                title="Eliminar operador"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
 
-    {operator.operator_name && (
-      <div className="text-sm text-gray-600 mb-3">
-        Nombre: {operator.operator_name}
-      </div>
-    )}
+                          {operator.operator_name && (
+                            <div className="text-sm text-gray-600 mb-3">
+                              Nombre: {operator.operator_name}
+                            </div>
+                          )}
 
-    <button
-      onClick={() => setActivePanel("operations")}
-      className="text-sm text-blue-600 hover:text-blue-800"
-    >
-      Ver operaciones →
-    </button>
-  </div>
-))}
+                          <button
+                            onClick={() => setActivePanel("operations")}
+                            className="text-sm text-blue-600 hover:text-blue-800"
+                          >
+                            Ver operaciones →
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   ) : (
                     <div className="text-center py-8 text-gray-600">
@@ -676,6 +699,16 @@ export default function SavedRunsViewer({ onBack }) {
         </div>
       )}
 
+      
+{showOperatorModal && (
+  <OperatorCountEditModal
+    runId={runData?.run?.id}
+    currentCount={runData?.run?.operators_count}  // Fix this line
+    onClose={() => setShowOperatorModal(false)}
+    onUpdate={handleOperatorUpdate}
+  />
+)}
+
       {/* Add Operator Modal */}
       {showAddOperator && selectedRun && (
         <AddOperatorModal
@@ -703,7 +736,6 @@ export default function SavedRunsViewer({ onBack }) {
         onSave={handleUpdateWorkingHours}
         isSaving={isUpdatingWorkingHours}
       />
-
       {/* Edit Efficiency Modal */}
 <EditEfficiencyModal
   isOpen={showEditEfficiency}
