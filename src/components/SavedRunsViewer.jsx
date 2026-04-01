@@ -252,40 +252,53 @@ const [isUpdatingEfficiency, setIsUpdatingEfficiency] = useState(false);
   };
 
   // Convertir operaciones de BD a formato rows del frontend
-  const getRowsFromData = () => {
-    if (!runData?.operations) return [];
+  // In SavedRunsViewer.jsx, update the getRowsFromData function:
 
-    const rows = [];
+// Convertir operaciones de BD a formato rows del frontend
+// In SavedRunsViewer.jsx, update getRowsFromData to ensure operation names are preserved
+const getRowsFromData = () => {
+  if (!runData?.operations) return [];
 
-    runData.operations.forEach((opGroup) => {
-      opGroup.operations.forEach((op) => {
-        const stitched = {};
+  const rows = [];
 
-        if (op.stitched_data) {
-          Object.entries(op.stitched_data).forEach(([slotLabel, qty]) => {
-            if (slotLabel) stitched[slotLabel] = qty;
-          });
-        }
+  runData.operations.forEach((opGroup) => {
+    opGroup.operations.forEach((op) => {
+      const stitched = {};
+      const sewed = {};
 
-        rows.push({
-          id: `db_${op.id}`,
-          operatorNo: opGroup.operator.operator_no.toString(),
-          operatorName: opGroup.operator.operator_name || "",
-          operation: op.operation_name,
-          t1: op.t1_sec?.toString() || "",
-          t2: op.t2_sec?.toString() || "",
-          t3: op.t3_sec?.toString() || "",
-          t4: op.t4_sec?.toString() || "",
-          t5: op.t5_sec?.toString() || "",
-          capPerOperator: parseFloat(op.capacity_per_hour) || 0,
-          stitched,
+      // Get planned/stitched data
+      if (op.stitched_data) {
+        Object.entries(op.stitched_data).forEach(([slotLabel, qty]) => {
+          if (slotLabel) stitched[slotLabel] = qty;
         });
+      }
+
+      // Get actual/sewed data from line leader
+      if (op.sewed_data) {
+        Object.entries(op.sewed_data).forEach(([slotLabel, qty]) => {
+          if (slotLabel) sewed[slotLabel] = qty;
+        });
+      }
+
+      rows.push({
+        id: `db_${op.id}`,
+        operatorNo: opGroup.operator.operator_no.toString(),
+        operatorName: opGroup.operator.operator_name || "",
+        operation: op.operation_name,  // Important: Keep the original operation name
+        t1: op.t1_sec?.toString() || "",
+        t2: op.t2_sec?.toString() || "",
+        t3: op.t3_sec?.toString() || "",
+        t4: op.t4_sec?.toString() || "",
+        t5: op.t5_sec?.toString() || "",
+        capPerOperator: parseFloat(op.capacity_per_hour) || 0,
+        stitched,
+        sewed,
       });
     });
+  });
 
-    return rows;
-  };
-
+  return rows;
+};
   // Metas por slot
   const getSlotTargets = () => {
     if (!runData?.slotTargets) return [];
