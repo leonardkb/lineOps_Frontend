@@ -46,10 +46,10 @@ export default function SplashScreen({ onFinish }) {
         </h1>
 
         {/* Company Name */}
-        <div className="mb-8">
+      {/*  <div className="mb-8">
           <span className="text-gray-400 text-lg">by </span>
           <span className="text-white font-semibold text-lg">Skyrina</span>
-        </div>
+        </div>*/}
 
         {/* Loading Dots */}
         <div className="flex justify-center space-x-2 mb-12">
