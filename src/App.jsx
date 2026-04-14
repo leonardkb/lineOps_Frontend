@@ -8,6 +8,8 @@ import Dashboard from "./pages/Dashboard";
 import LineBalancing from "./pages/LineBalancing";
 import LineTvDashboard from "./pages/LineTvDashboard";
 import SkyrinaDashboard from "./pages/SkyrinaDashboard";
+import Overview from "./pages/Overview";
+import ActualEfficiency from "./pages/ActualEfficiency";
 
 
 
@@ -24,6 +26,8 @@ export default function App() {
         <Route path="/line-balancing" element={<LineBalancing />} />
         <Route path="/line-tv" element={<LineTvDashboard />} />
          <Route path="/skyrina" element={<SkyrinaDashboard />}/> 
+         <Route path="/overview" element ={<Overview />}/>
+         <Route path="/actual-efficiency" element={<ActualEfficiency />} />
       </Routes>
     </Router>
   );
