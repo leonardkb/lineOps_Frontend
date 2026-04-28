@@ -12,7 +12,7 @@ function toYMD(d) {
   return dt.toISOString().slice(0, 10);
 }
 
-// Helper function to calculate finished garments (empaque)
+// Helper function to calculate finished garments (empaque) for a specific run
 const calculateFinishedGarments = (runData) => {
   if (!runData) return 0;
   let total = 0;
@@ -32,17 +32,15 @@ const calculateFinishedGarments = (runData) => {
   return total;
 };
 
-// Helper function to calculate real-time efficiency
+// Helper function to calculate real-time efficiency for a specific run
 const calculateRealtimeEfficiency = (runData, selectedDate) => {
   if (!runData || !selectedDate) return 0;
   
   const now = new Date();
   const todayStr = selectedDate;
   
-  // Production timeline: 8:00 AM start
   const PRODUCTION_START = new Date(`${todayStr}T08:00:00`);
   
-  // Get the last slot end time
   const slots = (runData.slots || [])
     .map(slot => {
       const end = new Date(`${todayStr}T${slot.slot_end}`);
@@ -50,19 +48,15 @@ const calculateRealtimeEfficiency = (runData, selectedDate) => {
     })
     .filter(s => s.end);
   
-  // Find the latest end time from slots
   const PRODUCTION_END = slots.length > 0 
     ? new Date(Math.max(...slots.map(s => s.end.getTime())))
     : new Date(`${todayStr}T17:36:00`);
   
-  // If production hasn't started yet
   if (now < PRODUCTION_START) {
     return 0;
   }
   
-  // If production has ended for the day
   if (now >= PRODUCTION_END) {
-    // Calculate full day efficiency using total production
     const sewed = calculateFinishedGarments(runData);
     const totalSAMOutput = sewed * (runData.run?.sam_minutes || 0);
     const totalAvailableMinutes = (runData.operators?.length || 0) * 
@@ -73,25 +67,20 @@ const calculateRealtimeEfficiency = (runData, selectedDate) => {
       : 0;
   }
   
-  // Calculate elapsed time in minutes
   const elapsedMilliseconds = now - PRODUCTION_START;
   const elapsedMinutes = elapsedMilliseconds / (1000 * 60);
   
-  // Get actual working hours so far (in minutes)
   const actualWorkingMinutes = Math.min(
     elapsedMinutes,
     (PRODUCTION_END - PRODUCTION_START) / (1000 * 60)
   );
   
-  // Calculate SAM produced so far (only from packing operations)
   const sewedSoFar = calculateFinishedGarments(runData);
   const samProducedSoFar = sewedSoFar * (runData.run?.sam_minutes || 0);
   
-  // Calculate available minutes so far (operators * actual time elapsed)
   const operatorsCount = runData.operators?.length || 0;
   const availableMinutesSoFar = operatorsCount * actualWorkingMinutes;
   
-  // Calculate real-time efficiency
   const realtimeEfficiency = availableMinutesSoFar > 0 
     ? (samProducedSoFar / availableMinutesSoFar) * 100 
     : 0;
@@ -105,10 +94,8 @@ const computeRealtimeTarget = (runData, selectedDate) => {
   const now = new Date();
   const todayStr = selectedDate;
   
-  // Production timeline: 8:00 AM to 5:36 PM
   const PRODUCTION_START = new Date(`${todayStr}T08:00:00`);
   
-  // Get slots with their end times
   const slots = (runData.slots || [])
     .map(slot => {
       const end = new Date(`${todayStr}T${slot.slot_end}`);
@@ -116,25 +103,20 @@ const computeRealtimeTarget = (runData, selectedDate) => {
     })
     .filter(s => s.end);
   
-  // Find the latest end time from slots (should be 17:36:00)
   const PRODUCTION_END = slots.length > 0 
     ? new Date(Math.max(...slots.map(s => s.end.getTime())))
     : new Date(`${todayStr}T17:36:00`);
   
-  // Get total target
   const totalTarget = runData.run?.target_pcs || 0;
   
-  // If production hasn't started yet (before 8:00 AM)
   if (now < PRODUCTION_START) {
     return 0;
   }
   
-  // If production is complete (after 5:36 PM)
   if (now >= PRODUCTION_END) {
     return totalTarget;
   }
   
-  // Calculate real-time target based on time elapsed since 8:00 AM
   const elapsedMilliseconds = now - PRODUCTION_START;
   const totalProductionMilliseconds = PRODUCTION_END - PRODUCTION_START;
   
@@ -153,22 +135,16 @@ export default function LineTvDashboard() {
   const [user, setUser] = useState(null);
   const [date, setDate] = useState(searchParams.get('date') || new Date().toISOString().split('T')[0]);
   const [lineNo, setLineNo] = useState(searchParams.get('line') || '');
-  const [runData, setRunData] = useState(null);
+  const [runDataList, setRunDataList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isMultiStyle, setIsMultiStyle] = useState(false);
   
   // Auto-refresh state
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [countdown, setCountdown] = useState(300); // 5 minutes in seconds
+  const [countdown, setCountdown] = useState(300);
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
-  
-  // Card data
-  const [realtimeTarget, setRealtimeTarget] = useState(0);
-  const [finishedGarments, setFinishedGarments] = useState(0);
-  const [realtimeEfficiency, setRealtimeEfficiency] = useState(0);
-  const [styleInfo, setStyleInfo] = useState({ name: '', code: '' });
-  const [operatorsCount, setOperatorsCount] = useState(0);
-  const [sam, setSam] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -197,9 +173,8 @@ export default function LineTvDashboard() {
       timer = setInterval(() => {
         setCountdown(prev => {
           if (prev <= 1) {
-            // Refresh data
             refreshData();
-            return 300; // Reset to 5 minutes
+            return 300;
           }
           return prev - 1;
         });
@@ -208,7 +183,6 @@ export default function LineTvDashboard() {
     return () => clearInterval(timer);
   }, [autoRefresh, lineNo, date]);
 
-  // Refresh data function
   const refreshData = async () => {
     if (lineNo && date) {
       console.log('Auto-refreshing data...');
@@ -217,13 +191,11 @@ export default function LineTvDashboard() {
     }
   };
 
-  // Manual refresh handler
   const handleManualRefresh = () => {
     setCountdown(300);
     refreshData();
   };
 
-  // Toggle auto-refresh
   const toggleAutoRefresh = () => {
     setAutoRefresh(!autoRefresh);
     if (!autoRefresh) {
@@ -231,14 +203,12 @@ export default function LineTvDashboard() {
     }
   };
 
-  // Format countdown as minutes:seconds
   const formatCountdown = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Format time for display
   const formatTime = (date) => {
     return date.toLocaleTimeString('es-MX', {
       hour: '2-digit',
@@ -251,7 +221,7 @@ export default function LineTvDashboard() {
     if (lineNo && date) {
       fetchLineData(lineNo, date);
     }
-  }, [lineNo, date]);
+  }, [lineNo, date, refreshKey]);
 
   const fetchLineData = async (line, selectedDate, isRefresh = false) => {
     if (!line || !selectedDate) return;
@@ -263,48 +233,54 @@ export default function LineTvDashboard() {
 
     try {
       const runsRes = await axios.get(`/api/line-runs/${line}`, { headers });
+      
       if (!runsRes.data.success) {
         setError('No se pudo obtener información de la línea');
+        setLoading(false);
         return;
       }
 
-      const run = runsRes.data.runs.find(r => toYMD(r.run_date) === selectedDate);
-      if (!run) {
-        setError('No hay datos de producción para esta fecha');
-        return;
-      }
-
-      const detailRes = await axios.get(`/api/get-run-data/${run.id}`, { headers });
-      if (!detailRes.data.success) {
-        setError('No se pudieron cargar los detalles de producción');
-        return;
-      }
-
-      setRunData(detailRes.data);
-      
-      // Calculate values
-      const rt = computeRealtimeTarget(detailRes.data, selectedDate);
-      setRealtimeTarget(rt);
-
-      // Calculate finished garments (empaque)
-      const finished = calculateFinishedGarments(detailRes.data);
-      setFinishedGarments(finished);
-      
-      const operatorsCount = detailRes.data.operators?.length || 0;
-      setOperatorsCount(operatorsCount);
-      
-      const workingHours = detailRes.data.run?.working_hours || 0;
-      const sam = detailRes.data.run?.sam_minutes || 0;
-      setSam(sam);
-      
-      // Calculate real-time efficiency
-      const rtEff = calculateRealtimeEfficiency(detailRes.data, selectedDate);
-      setRealtimeEfficiency(rtEff);
-
-      setStyleInfo({
-        name: detailRes.data.run?.style || 'N/A',
-        code: detailRes.data.run?.style_code || 'N/A'
+      const runsOnDate = runsRes.data.runs.filter(run => {
+        const runDateStr = toYMD(run.run_date);
+        return runDateStr === selectedDate;
       });
+      
+      console.log(`Found ${runsOnDate.length} runs for line ${line} on ${selectedDate}`);
+      
+      if (runsOnDate.length === 0) {
+        setError('No hay datos de producción para esta fecha');
+        setLoading(false);
+        return;
+      }
+
+      const hasMultipleStyles = runsOnDate.length > 1;
+      setIsMultiStyle(hasMultipleStyles);
+      
+      const allRunData = [];
+      for (const run of runsOnDate) {
+        try {
+          const detailRes = await axios.get(`/api/get-run-data/${run.id}`, { headers });
+          if (detailRes.data.success) {
+            allRunData.push(detailRes.data);
+          } else {
+            console.warn(`No data for run ${run.id}`);
+          }
+        } catch (err) {
+          console.error(`Error fetching run ${run.id}:`, err.message);
+        }
+      }
+      
+      if (allRunData.length === 0) {
+        setError('No se pudieron cargar los datos detallados');
+        setLoading(false);
+        return;
+      }
+      
+      setRunDataList(allRunData);
+      
+      if (hasMultipleStyles) {
+        console.log(`Found ${allRunData.length} styles for line ${line} on ${selectedDate}`);
+      }
 
       if (isRefresh) {
         console.log('Data refreshed successfully');
@@ -312,7 +288,7 @@ export default function LineTvDashboard() {
 
     } catch (err) {
       console.error('Error fetching line data:', err);
-      setError('Error al cargar los datos');
+      setError('Error al cargar los datos: ' + (err.response?.data?.error || err.message));
     } finally {
       setLoading(false);
     }
@@ -321,19 +297,18 @@ export default function LineTvDashboard() {
   const handleDateChange = (newDate) => {
     setDate(newDate);
     setCountdown(300);
+    setRefreshKey(prev => prev + 1);
   };
 
   const handleLineChange = (newLine) => {
     setLineNo(newLine);
-    setRunData(null);
-    setFinishedGarments(0);
-    setRealtimeTarget(0);
-    setRealtimeEfficiency(0);
+    setRunDataList([]);
     setCountdown(300);
+    setRefreshKey(prev => prev + 1);
   };
 
   const formatNumber = (value) => {
-    if (value == null) return '0';
+    if (value == null || isNaN(value)) return '0';
     return Number(value).toLocaleString(undefined, {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
@@ -341,14 +316,49 @@ export default function LineTvDashboard() {
   };
 
   const formatDecimal = (value) => {
-    if (value == null) return '0';
+    if (value == null || isNaN(value)) return '0';
     return Number(value).toLocaleString(undefined, {
       minimumFractionDigits: 1,
       maximumFractionDigits: 1
     });
   };
 
+  // Updated efficiency color function with new color scheme
+  const getEfficiencyColor = (eff) => {
+    if (isNaN(eff)) return 'text-gray-600';
+    if (eff < 60) return 'text-red-600';
+    if (eff >= 60 && eff < 70) return 'text-orange-500';
+    if (eff >= 70 && eff < 80) return 'text-yellow-600';
+    if (eff >= 80 && eff < 90) return 'text-green-600';
+    if (eff >= 90) return 'text-green-800';
+    return 'text-gray-600';
+  };
+
+  // Updated progress bar color function with new color scheme
+  const getProgressBarColor = (eff) => {
+    if (isNaN(eff)) return 'bg-gray-600';
+    if (eff < 60) return 'bg-red-600';
+    if (eff >= 60 && eff < 70) return 'bg-orange-500';
+    if (eff >= 70 && eff < 80) return 'bg-yellow-500';
+    if (eff >= 80 && eff < 90) return 'bg-green-600';
+    if (eff >= 90) return 'bg-green-800';
+    return 'bg-gray-600';
+  };
+
+  // Updated card background color based on efficiency
+  const getCardBgColor = (eff) => {
+    if (isNaN(eff)) return 'bg-white';
+    if (eff < 60) return 'bg-red-50';
+    if (eff >= 60 && eff < 70) return 'bg-orange-50';
+    if (eff >= 70 && eff < 80) return 'bg-yellow-50';
+    if (eff >= 80 && eff < 90) return 'bg-green-50';
+    if (eff >= 90) return 'bg-green-100';
+    return 'bg-white';
+  };
+
+  // Updated status color based on variance - keeping original but adjusting colors
   const getStatusColor = (variancePct) => {
+    if (isNaN(variancePct)) return { bg: 'bg-gray-50', border: 'border-gray-500', text: 'text-gray-700', badge: 'bg-gray-100 text-gray-800', icon: '⚪', label: 'Sin datos' };
     if (variancePct < -15) return { bg: 'bg-red-50', border: 'border-red-500', text: 'text-red-700', badge: 'bg-red-100 text-red-800', icon: '🔴', label: 'Crítico' };
     if (variancePct < -5) return { bg: 'bg-orange-50', border: 'border-orange-500', text: 'text-orange-700', badge: 'bg-orange-100 text-orange-800', icon: '🟠', label: 'Atrasado' };
     if (variancePct <= 5) return { bg: 'bg-green-50', border: 'border-green-500', text: 'text-green-700', badge: 'bg-green-100 text-green-800', icon: '🟢', label: 'En Ruta' };
@@ -356,16 +366,29 @@ export default function LineTvDashboard() {
     return { bg: 'bg-blue-50', border: 'border-blue-500', text: 'text-blue-700', badge: 'bg-blue-100 text-blue-800', icon: '🔵', label: 'Superando' };
   };
 
-  const getEfficiencyColor = (eff) => {
-    if (eff >= 80) return 'text-green-600';
-    if (eff >= 60) return 'text-yellow-600';
-    return 'text-red-600';
-  };
-
-  const getProgressBarColor = (eff) => {
-    if (eff >= 80) return 'bg-green-600';
-    if (eff >= 60) return 'bg-yellow-600';
-    return 'bg-red-600';
+  const getRunCardData = (runData) => {
+    const rt = computeRealtimeTarget(runData, date);
+    const finished = calculateFinishedGarments(runData);
+    const operatorsCount = runData.operators?.length || 0;
+    const sam = runData.run?.sam_minutes || 0;
+    let rtEff = calculateRealtimeEfficiency(runData, date);
+    // Cap efficiency at 100 for display purposes
+    const displayEfficiency = Math.min(rtEff, 100);
+    const variance = finished - rt;
+    const variancePct = rt > 0 ? (variance / rt) * 100 : 0;
+    
+    return {
+      realtimeTarget: rt,
+      finishedGarments: finished,
+      realtimeEfficiency: rtEff,
+      displayEfficiency: displayEfficiency,
+      operatorsCount,
+      sam,
+      styleName: runData.run?.style || 'N/A',
+      styleCode: runData.run?.style_code || 'N/A',
+      variance,
+      variancePct
+    };
   };
 
   if (!user) {
@@ -375,10 +398,6 @@ export default function LineTvDashboard() {
       </div>
     );
   }
-
-  const variance = finishedGarments - realtimeTarget;
-  const variancePct = realtimeTarget > 0 ? (variance / realtimeTarget) * 100 : 0;
-  const status = getStatusColor(variancePct);
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
@@ -398,104 +417,147 @@ export default function LineTvDashboard() {
         formatTime={formatTime}
       />
 
-      <main className="flex-1 max-w-6xl mx-auto px-4 py-4 w-full">
-        {/* Error message */}
+      <main className="flex-1 max-w-7xl mx-auto px-4 py-4 w-full">
         {error && (
-          <div className="bg-red-100 border-2 border-red-400 text-red-700 px-4 py-2 rounded-lg mb-4 text-base">
+          <div className="bg-red-100 border-2 border-red-400 text-red-700 
+          px-6 py-4 rounded-lg mb-4 text-xl font-semibold">
             ⚠️ {error}
           </div>
         )}
 
-        {/* Loading */}
         {loading && lineNo && (
           <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-16 w-16 border-4 border-gray-200 border-t-gray-900 mx-auto"></div>
+            <div className="animate-spin rounded-full h-16 w-16 border-4 border-gray-200
+             border-t-gray-900 mx-auto"></div>
             <p className="mt-3 text-lg text-gray-600">Cargando datos...</p>
           </div>
         )}
 
-        {/* COMPACT LINE CARD - OPTIMIZED FOR 28-30 INCH TV */}
-        {!loading && lineNo && runData && (
-          <div className={`border-4 ${status.border} rounded-xl overflow-hidden shadow-xl`}>
-            {/* Header - Compact */}
-            <div className={`${status.bg} px-5 py-3 flex justify-between items-center`}>
-              <div className="flex items-center gap-3">
-                <span className="text-3xl font-bold text-gray-900">Línea {lineNo}</span>
-                <span className="text-2xl">{status.icon}</span>
-              </div>
-              <div className={`${status.badge} px-4 py-1.5 rounded-full text-lg font-semibold shadow`}>
-                {status.label}
-              </div>
-            </div>
-
-            {/* Card Content - Compact */}
-            <div className="p-5 bg-white">
-              {/* Style info - Compact */}
-              <div className="mb-3 text-base text-gray-600 font-medium border-b pb-2">
-                {styleInfo.code} - {styleInfo.name}
-              </div>
-
-              {/* Operator Info - 2 columns */}
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <div className="text-sm text-gray-600 mb-1">Operadores</div>
-                  <div className="text-2xl font-bold text-gray-900">{operatorsCount}</div>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <div className="text-sm text-gray-600 mb-1">SAM</div>
-                  <div className="text-2xl font-bold text-gray-900">{formatDecimal(sam)}</div>
-                </div>
-              </div>
-
-              {/* Real-time Efficiency Section - Compact */}
-              <div className="mb-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-lg text-gray-700 font-semibold">Eficiencia RT:</span>
-                  <span className={`text-2xl font-bold ${getEfficiencyColor(realtimeEfficiency)}`}>
-                    {formatDecimal(realtimeEfficiency)}%
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-3">
-                  <div
-                    className={`h-3 rounded-full transition-all duration-500 ${getProgressBarColor(realtimeEfficiency)}`}
-                    style={{ width: `${Math.min(realtimeEfficiency, 100)}%` }}
-                  ></div>
-                </div>
-              </div>
-
-              {/* Two column grid - Compact */}
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="bg-blue-50 rounded-lg p-4">
-                  <div className="text-base text-blue-800 font-medium mb-1">Objetivo (ahora)</div>
-                  <div className="text-3xl font-bold text-blue-900">{formatNumber(realtimeTarget)}</div>
-                </div>
-                <div className="bg-green-50 rounded-lg p-4">
-                  <div className="text-base text-green-800 font-medium mb-1">Cosido</div>
-                  <div className="text-3xl font-bold text-green-900">{formatNumber(finishedGarments)}</div>
-                </div>
-              </div>
-
-              {/* Variance - Compact */}
-              <div className="flex justify-between items-center pt-3 border-t-2 border-gray-200">
-                <span className="text-lg text-gray-700 font-semibold">Variación</span>
-                <span className={`font-bold flex items-center gap-2 text-xl ${
-                  variance > 0 ? 'text-green-600' : variance < 0 ? 'text-red-600' : 'text-gray-600'
-                }`}>
-                  <span className="text-2xl">{variance > 0 ? '↑' : variance < 0 ? '↓' : '→'}</span>
-                  <span>{variance > 0 ? '+' : ''}{formatNumber(variance)}</span>
-                  
-                </span>
-              </div>
-            </div>
+        {!loading && lineNo && runDataList.length > 1 && (
+          <div className="mb-4 bg-blue-100 border-2 border-blue-400 text-blue-800 px-4
+           py-2 rounded-lg text-center text-lg font-semibold">
+            📊 Línea con múltiples estilos - Mostrando {runDataList.length} estilos
           </div>
         )}
 
-        {/* No line selected - Compact message */}
+        {!loading && lineNo && runDataList.length > 0 && (
+          <div className={`grid gap-6 ${runDataList.length === 1 ? 'grid-cols-1 max-w-5xl mx-auto' : 'grid-cols-1 lg:grid-cols-2'}`}>
+            {runDataList.map((runData, index) => {
+              const cardData = getRunCardData(runData);
+              const status = getStatusColor(cardData.variancePct);
+              const cardBg = getCardBgColor(cardData.displayEfficiency);
+              
+              return (
+                <div key={runData.run?.id || index} className={`border-4 ${status.border} rounded-xl overflow-hidden shadow-2xl ${cardBg}`}>
+                  {/* Header - Larger and more prominent */}
+                  <div className={`${status.bg} px-6 py-4 flex justify-between items-center`}>
+                    <div className="flex items-center gap-4">
+                      <div>
+                        <span className="text-3xl font-black text-gray-900">
+                          Línea {lineNo}
+                        </span>
+                        {runDataList.length > 1 && (
+                          <div className="text-base text-gray-600 mt-1 font-medium">
+                            {cardData.styleCode} - {cardData.styleName.length > 35 ? cardData.styleName.substring(0, 35) + '...' : cardData.styleName}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-3xl">{status.icon}</span>
+                    </div>
+                    <div className={`${status.badge} px-5 py-2 rounded-full text-xl font-bold shadow-md`}>
+                      {status.label}
+                    </div>
+                  </div>
+
+                  {/* Card Content - Larger everything */}
+                  <div className="p-6">
+                    {/* Style info - only show when single style */}
+                    {runDataList.length === 1 && (
+                      <div className="mb-4 text-lg text-gray-700 font-semibold border-b-2 pb-2 truncate">
+                        📦 {cardData.styleCode} - {cardData.styleName}
+                      </div>
+                    )}
+
+                    {/* Operator Info - 2 columns with larger numbers */}
+                    <div className="grid grid-cols-2 gap-4 mb-5">
+                      <div className="bg-gray-100 rounded-xl p-4 text-center">
+                        <div className="text-base text-gray-600 mb-2 font-semibold uppercase tracking-wide">👥 Operadores</div>
+                        <div className="text-4xl font-black text-gray-900">{cardData.operatorsCount}</div>
+                      </div>
+                      <div className="bg-gray-100 rounded-xl p-4 text-center">
+                        <div className="text-base text-gray-600 mb-2 font-semibold uppercase tracking-wide">⏱️ SAM</div>
+                        <div className="text-4xl font-black text-gray-900">{formatDecimal(cardData.sam)}</div>
+                      </div>
+                    </div>
+
+                    {/* Real-time Efficiency Section - More prominent with new colors */}
+                    <div className="mb-5 rounded-xl p-5" style={{ backgroundColor: 'rgba(255,255,255,0.7)' }}>
+                      <div className="flex justify-between items-center mb-3">
+                        <span className="text-xl text-gray-800 font-bold uppercase tracking-wide">⚡ Eficiencia RT:</span>
+                        <span className={`text-3xl font-black ${getEfficiencyColor(cardData.displayEfficiency)}`}>
+                          {formatDecimal(cardData.displayEfficiency)}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-300 rounded-full h-4">
+                        <div
+                          className={`h-4 rounded-full transition-all duration-500 ${getProgressBarColor(cardData.displayEfficiency)}`}
+                          style={{ width: `${cardData.displayEfficiency}%` }}
+                        ></div>
+                      </div>
+                      {/* Efficiency label */}
+                      <div className="mt-2 text-right">
+                        <span className={`text-sm font-semibold ${getEfficiencyColor(cardData.displayEfficiency)}`}>
+                          {cardData.displayEfficiency < 60 && '⚠️ Por debajo de meta'}
+                          {cardData.displayEfficiency >= 60 && cardData.displayEfficiency < 70 && '⚠️ Necesita mejorar'}
+                          {cardData.displayEfficiency >= 70 && cardData.displayEfficiency < 80 && '📈 Buen desempeño'}
+                          {cardData.displayEfficiency >= 80 && cardData.displayEfficiency < 90 && '🌟 Excelente'}
+                          {cardData.displayEfficiency >= 90 && '🏆 Outstanding!'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Two column grid - Target and Produced with larger numbers */}
+                    <div className="grid grid-cols-2 gap-5 mb-5">
+                      <div className="bg-blue-100 rounded-xl p-5 text-center">
+                        <div className="text-lg text-blue-900 font-bold mb-2 uppercase tracking-wide">🎯 Objetivo (ahora)</div>
+                        <div className="text-5xl font-black text-blue-900">{formatNumber(cardData.realtimeTarget)}</div>
+                      </div>
+                      <div className="bg-green-100 rounded-xl p-5 text-center">
+                        <div className="text-lg text-green-900 font-bold mb-2 uppercase tracking-wide">✅ Cosido</div>
+                        <div className="text-5xl font-black text-green-900">{formatNumber(cardData.finishedGarments)}</div>
+                      </div>
+                    </div>
+
+                    {/* Variance - More visible */}
+                    <div className="flex justify-between items-center pt-4 border-t-2 border-gray-300">
+                      <span className="text-xl text-gray-800 font-bold uppercase tracking-wide">📊 Variación</span>
+                      <span className={`font-black flex items-center gap-3 text-2xl ${
+                        cardData.variance > 0 ? 'text-green-600' : cardData.variance < 0 ? 'text-red-600' : 'text-gray-600'
+                      }`}>
+                        <span className="text-3xl">{cardData.variance > 0 ? '↑' : cardData.variance < 0 ? '↓' : '→'}</span>
+                        <span>{cardData.variance > 0 ? '+' : ''}{formatNumber(cardData.variance)}</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {!loading && lineNo && runDataList.length === 0 && !error && (
+          <div className="bg-yellow-50 border-2 border-yellow-400 text-yellow-800 px-6 py-8 rounded-lg text-center">
+            <div className="text-5xl mb-4">📋</div>
+            <h3 className="text-2xl font-bold mb-3">No hay datos disponibles</h3>
+            <p className="text-lg">No se encontraron datos de producción para la línea {lineNo} en la fecha {date}</p>
+          </div>
+        )}
+
         {!lineNo && (
-          <div className="bg-white rounded-xl shadow-lg p-12 text-center">
-            <div className="text-5xl mb-4">📺</div>
-            <h2 className="text-3xl font-bold text-gray-800 mb-2">Selecciona una línea</h2>
-            <p className="text-lg text-gray-500">para ver los datos en tiempo real</p>
+          <div className="bg-white rounded-xl shadow-2xl p-16 text-center">
+            <div className="text-7xl mb-6">📺</div>
+            <h2 className="text-4xl font-black text-gray-800 mb-3">Selecciona una línea</h2>
+            <p className="text-xl text-gray-500">para ver los datos en tiempo real</p>
           </div>
         )}
       </main>
