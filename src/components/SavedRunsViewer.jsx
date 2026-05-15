@@ -338,49 +338,68 @@ const handleDeleteRun = async () => {
   };
 
   // Convertir operaciones de BD a formato rows del frontend
-  const getRowsFromData = () => {
-    if (!runData?.operations) return [];
+  // In SavedRunsViewer.jsx - REPLACE the getRowsFromData function
+const getRowsFromData = () => {
+  if (!runData?.operations) return [];
 
-    const rows = [];
+  // Create mapping from slot_label to slot_id
+  const slotLabelToId = {};
+  if (runData?.slots) {
+    runData.slots.forEach(slot => {
+      slotLabelToId[slot.slot_label] = slot.id;
+    });
+  }
 
-    runData.operations.forEach((opGroup) => {
-      opGroup.operations.forEach((op) => {
-        const stitched = {};
-        const sewed = {};
+  const rows = [];
 
-        // Get planned/stitched data
-        if (op.stitched_data) {
-          Object.entries(op.stitched_data).forEach(([slotLabel, qty]) => {
-            if (slotLabel) stitched[slotLabel] = qty;
-          });
-        }
+  runData.operations.forEach((opGroup) => {
+    opGroup.operations.forEach((op) => {
+      const stitched = {};
+      const sewed = {};
 
-        // Get actual/sewed data from line leader
-        if (op.sewed_data) {
-          Object.entries(op.sewed_data).forEach(([slotLabel, qty]) => {
-            if (slotLabel) sewed[slotLabel] = qty;
-          });
-        }
-
-        rows.push({
-          id: `db_${op.id}`,
-          operatorNo: opGroup.operator.operator_no.toString(),
-          operatorName: opGroup.operator.operator_name || "",
-          operation: op.operation_name,
-          t1: op.t1_sec?.toString() || "",
-          t2: op.t2_sec?.toString() || "",
-          t3: op.t3_sec?.toString() || "",
-          t4: op.t4_sec?.toString() || "",
-          t5: op.t5_sec?.toString() || "",
-          capPerOperator: parseFloat(op.capacity_per_hour) || 0,
-          stitched,
-          sewed,
+      // Get planned/stitched data - map from label to ID
+      if (op.stitched_data && typeof op.stitched_data === 'object') {
+        Object.entries(op.stitched_data).forEach(([slotLabel, qty]) => {
+          if (slotLabel && slotLabel !== '') {
+            const slotId = slotLabelToId[slotLabel];
+            if (slotId) {
+              stitched[slotId] = qty;
+            }
+          }
         });
+      }
+
+      // Get actual/sewed data from line leader - map from label to ID
+      if (op.sewed_data && typeof op.sewed_data === 'object') {
+        Object.entries(op.sewed_data).forEach(([slotLabel, qty]) => {
+          if (slotLabel && slotLabel !== '') {
+            const slotId = slotLabelToId[slotLabel];
+            if (slotId) {
+              sewed[slotId] = qty;
+            }
+          }
+        });
+      }
+
+      rows.push({
+        id: `db_${op.id}`,
+        operatorNo: opGroup.operator.operator_no.toString(),
+        operatorName: opGroup.operator.operator_name || "",
+        operation: op.operation_name,
+        t1: op.t1_sec?.toString() || "",
+        t2: op.t2_sec?.toString() || "",
+        t3: op.t3_sec?.toString() || "",
+        t4: op.t4_sec?.toString() || "",
+        t5: op.t5_sec?.toString() || "",
+        capPerOperator: parseFloat(op.capacity_per_hour) || 0,
+        stitched,
+        sewed,
       });
     });
+  });
 
-    return rows;
-  };
+  return rows;
+};
 
   // Metas por slot
   const getSlotTargets = () => {
