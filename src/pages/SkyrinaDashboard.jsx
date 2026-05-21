@@ -478,7 +478,7 @@ useEffect(() => {
     try {
       // Use batch endpoint instead of individual requests
       const lines = lineData.map(line => line.lineNo);
-      const batchRes = await axios.post(`${API_BASE}/api/batch/line-runs-data`, 
+      const batchRes = await axios.post(`/api/batch/line-runs-data`, 
         { lines, date },
         { headers }
       );
