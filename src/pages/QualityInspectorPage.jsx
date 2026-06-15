@@ -131,8 +131,7 @@ const QualityInspectorPage = () => {
   const fetchDefectTypes = async () => {
     try {
       const token = getToken();
-      const response = await axios.get(`/api/quality/defect-types`,
-    {
+      const response = await axios.get(`/api/quality/defect-types`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (response.data.success) {
@@ -160,7 +159,7 @@ const QualityInspectorPage = () => {
         const runInspections = response.data.inspections.filter(
           i => i.style === selectedRun.style && i.inspection_date === today
         );
-        const total = runInspections.reduce((sum, i) => sum + (i.total_defects || 0), 0);
+        const total = runInspections.reduce((sum, i) => sum + (Number(i.total_defects) || 0), 0);
         setRunStats(prev => ({
           ...prev,
           [selectedRun.id]: { todayTotal: total }
