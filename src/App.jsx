@@ -11,7 +11,7 @@ import SkyrinaDashboard from "./pages/SkyrinaDashboard";
 import Overview from "./pages/Overview";
 import ActualEfficiency from "./pages/ActualEfficiency";
 import QualityInspectorPage from "./pages/QualityInspectorPage";
-import QualityAnalytics from "./pages/Qualityanalytics";
+import QualityAnalytics from "./pages/QualityAnalytics";
 
 
 export default function App() {
