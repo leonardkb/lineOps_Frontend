@@ -19,6 +19,7 @@ const QualityInspectorPage = () => {
   const [loading, setLoading] = useState(false);
   const [sessionDefects, setSessionDefects] = useState([]);
   const [runStats, setRunStats] = useState({});
+  const [savedInspections, setSavedInspections] = useState([]);
   const [user, setUser] = useState(null);
 
   const defectTypeSelectRef = useRef(null);
@@ -48,6 +49,15 @@ const QualityInspectorPage = () => {
       }
     }
   }, [selectedRun]);
+
+  // Cargar el total guardado y el historial al cambiar de estilo
+  useEffect(() => {
+    if (selectedRun && selectedLine) {
+      fetchRunStats();
+    } else {
+      setSavedInspections([]);
+    }
+  }, [selectedRun, selectedLine]);
 
   const getToken = () => localStorage.getItem('token');
 
@@ -121,7 +131,8 @@ const QualityInspectorPage = () => {
   const fetchDefectTypes = async () => {
     try {
       const token = getToken();
-      const response = await axios.get(`/api/quality/defect-types`, {
+      const response = await axios.get(`/api/quality/defect-types`,
+    {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (response.data.success) {
@@ -154,6 +165,12 @@ const QualityInspectorPage = () => {
           ...prev,
           [selectedRun.id]: { todayTotal: total }
         }));
+
+        // Guardar el historial de hoy (lo mas reciente primero)
+        const sorted = [...runInspections].sort(
+          (a, b) => new Date(b.created_at) - new Date(a.created_at)
+        );
+        setSavedInspections(sorted);
       }
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -361,6 +378,11 @@ const QualityInspectorPage = () => {
       localStorage.removeItem('user');
       navigate('/');
     }
+  };
+
+  const formatTime = (ts) => {
+    if (!ts) return '';
+    return new Date(ts).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
   };
 
   return (
@@ -606,8 +628,11 @@ const QualityInspectorPage = () => {
           </form>
         </div>
 
-        {/* Panel derecho — Sesión actual (con scroll interno) */}
-        <div className="bg-white rounded-lg shadow-sm p-4 flex flex-col min-h-0">
+        {/* Panel derecho — Sesión actual + Historial guardado */}
+        <div className="flex flex-col gap-3 min-h-0">
+
+        {/* Sesión actual (con scroll interno) */}
+        <div className="bg-white rounded-lg shadow-sm p-4 flex flex-col min-h-0 flex-1">
           <div className="flex justify-between items-center mb-2 flex-shrink-0">
             <h3 className="text-base font-bold">Sesión Actual</h3>
             {selectedRun && (
@@ -650,11 +675,45 @@ const QualityInspectorPage = () => {
             </button>
           )}
 
+        </div>
+
+        {/* Guardado Hoy — historial de defectos ya guardados */}
+        <div className="bg-white rounded-lg shadow-sm p-4 flex flex-col min-h-0 flex-1">
+          <div className="flex justify-between items-center mb-2 flex-shrink-0">
+            <h3 className="text-base font-bold">Guardado Hoy</h3>
+            <span className="text-2xl font-bold text-green-600">
+              {selectedRun ? (runStats[selectedRun.id]?.todayTotal || 0) : 0}
+            </span>
+          </div>
+
+          <div className="space-y-2 flex-1 min-h-0 overflow-y-auto mb-2">
+            {savedInspections.map((insp) => (
+              <div key={insp.id} className="border-l-4 border-green-500 pl-3 py-2 text-sm bg-gray-50 rounded">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium">{insp.total_defects} defectos</span>
+                  <span className="text-xs text-gray-500">{formatTime(insp.created_at)}</span>
+                </div>
+                {insp.bad_type && (
+                  <div className="text-xs text-gray-600 truncate" title={insp.bad_type}>{insp.bad_type}</div>
+                )}
+                <div className="text-[11px] text-gray-400">
+                  {insp.inspector_name}{insp.shift_slot ? ` • ${insp.shift_slot}` : ''}
+                </div>
+              </div>
+            ))}
+            {savedInspections.length === 0 && (
+              <div className="text-center text-gray-500 py-6 text-sm">
+                Aún no hay defectos guardados hoy<br/>para este estilo.
+              </div>
+            )}
+          </div>
+
           {selectedRun && (
-            <div className="text-[11px] text-gray-500 text-center mt-2 flex-shrink-0">
+            <div className="text-[11px] text-gray-500 text-center flex-shrink-0">
               Guardado en Línea {selectedLine} • Estilo {selectedRun.style}
             </div>
           )}
+        </div>
         </div>
       </div>
 
