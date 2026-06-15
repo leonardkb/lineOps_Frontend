@@ -14,7 +14,6 @@ import {
 
 import NavCeo from '../components/NavCeo';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
 const fmt = (v) => {
   if (v == null || isNaN(v)) return '0';
@@ -86,7 +85,7 @@ export default function QualityAnalytics() {
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) { navigate('/'); return; }
-    axios.get(`${API_BASE}/api/me`, { headers: { Authorization: `Bearer ${token}` } })
+    axios.get(`/api/me`, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => setUser(res.data.user))
       .catch(() => {
         localStorage.removeItem('token');
@@ -112,7 +111,7 @@ export default function QualityAnalytics() {
       const params = new URLSearchParams({ startDate, endDate });
       if (lineFilter !== 'all') params.append('line', lineFilter);
       if (styleFilter !== 'all') params.append('style', styleFilter);
-      const res = await axios.get(`${API_BASE}/api/quality/analytics?${params.toString()}`, {
+      const res = await axios.get(`/api/quality/analytics?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.data.success) setData(res.data);
