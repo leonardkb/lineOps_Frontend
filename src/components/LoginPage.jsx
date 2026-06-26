@@ -50,6 +50,8 @@ export default function LoginPage() {
         navigate("/overview", { replace: true });
       }else if(roleNorm === "qualityinspector") {
         navigate("/quality-inspector", { replace: true });
+      }else if(roleNorm === "inspector") {
+        navigate("/edit-operation", { replace: true });
       }else {
         navigate("/", { replace: true });
       }

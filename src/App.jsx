@@ -12,6 +12,7 @@ import Overview from "./pages/Overview";
 import ActualEfficiency from "./pages/ActualEfficiency";
 import QualityInspectorPage from "./pages/QualityInspectorPage";
 import QualityAnalytics from "./pages/QualityAnalytics";
+import EditOperationPlanner from "./pages/EditOperationPlanner";
 
 
 export default function App() {
@@ -22,15 +23,16 @@ export default function App() {
         <Route path="/line_info" element={<LineInfo />} />
         <Route path="/" element={<LoginPage />} />
         <Route path="/admin-dashboard" element={<AdminDashboard />} />
-         <Route path="/admin" element={<Dashboard />} />
+        <Route path="/admin" element={<Dashboard />} />
         <Route path="/lineleader" element={<LineLeaderPage />} />
         <Route path="/line-balancing" element={<LineBalancing />} />
         <Route path="/line-tv" element={<LineTvDashboard />} />
-         <Route path="/skyrina" element={<SkyrinaDashboard />}/> 
-         <Route path="/overview" element ={<Overview />}/>
-         <Route path="/actual-efficiency" element={<ActualEfficiency />} />
-          <Route path="/quality-inspector" element={<QualityInspectorPage />} />  {/* ← ADD THIS */}
-           <Route path="/quality-monitor" element={<QualityAnalytics/>} />  {/*quality monitor route, same component as quality inspector */}
+        <Route path="/skyrina" element={<SkyrinaDashboard />}/> 
+        <Route path="/overview" element ={<Overview />}/>
+        <Route path="/actual-efficiency" element={<ActualEfficiency />} />
+        <Route path="/quality-inspector" element={<QualityInspectorPage />} />  {/* ← ADD THIS */}
+        <Route path="/quality-monitor" element={<QualityAnalytics/>} />  {/*quality monitor route, same component as quality inspector */}
+         <Route path="/edit-operation" element={<EditOperationPlanner />} />  {/*edit operation route */}
       </Routes>
     </Router>
   );
