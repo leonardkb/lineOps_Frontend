@@ -1,11 +1,15 @@
 // src/lib/masterCodeCatalog.js
 
-// NOTE: API_URL was removed — nginx reverse-proxies /api/* on the same
-// origin as the frontend now, so components should call relative paths
-// like fetch("/api/users") or axios.get("/api/get-run-data/123") instead
-// of prefixing a host. See AdminDashboard.jsx for the pattern to follow.
-// If any other file still imports API_URL from here, update it to use
-// a plain relative "/api/..." path.
+// API_URL is intentionally an empty string, not removed. Turns out this
+// export is depended on by several components (PlanningDashboard,
+// WorkOrderList, StyleSelectorModal, MasterCodeSelectorModal,
+// WorkOrderForm, LineAssignmentForm, PlanBoard, MerchantPage) that build
+// request URLs like `${API_URL}/api/...`. Since nginx now reverse-proxies
+// /api/* on the same origin as the frontend, an empty string makes every
+// one of those turn into a plain relative "/api/..." path without having
+// to touch each file individually. Do not hardcode a host here again
+// (e.g. 'http://localhost:5000') — that breaks in production.
+export const API_URL = '';
 
 export const TIPOS = [
   { code: "DAM", label: "Dama" },
