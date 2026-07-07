@@ -46,13 +46,20 @@ export default function LoginPage() {
         navigate("/planner", { replace: true });
       }else if(roleNorm === "skyrina") {
         navigate("/skyrina", { replace: true });
+      }else if(roleNorm === "planner") {
+        navigate("/advanced-planning", { replace: true });
       }else if(roleNorm === "master") {
         navigate("/overview", { replace: true });
       }else if(roleNorm === "qualityinspector") {
         navigate("/quality-inspector", { replace: true });
       }else if(roleNorm === "inspector") {
         navigate("/edit-operation", { replace: true });
-      }else {
+      }else if(roleNorm === "merchant") {
+        navigate("/merchant-dashboard", { replace: true });
+      } else if(roleNorm === "admin") {
+        navigate("/admin-users", { replace: true });
+      }
+      else {
         navigate("/", { replace: true });
       }
 
