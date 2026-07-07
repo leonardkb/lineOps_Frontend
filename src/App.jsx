@@ -16,7 +16,6 @@ import QualityAnalytics from "./pages/QualityAnalytics";
 import EditOperationPlanner from "./pages/EditOperationPlanner";
 import MerchantDashboard from "./pages/merchant/MerchantDashboard";
 import MerchantPage from "./pages/merchant/MerchantPage";
-import AdminUsers from "./pages/AdminUsers";
 
 export default function App() {
   return (
@@ -39,7 +38,6 @@ export default function App() {
         <Route path="/edit-operation" element={<EditOperationPlanner />} />  {/*edit operation route */}
         <Route path="/merchant-dashboard" element={<MerchantDashboard />} /> {/*merchant dashboard route */}
         <Route path="/merchant" element={<MerchantPage />} /> {/*merchant route */}
-        <Route path ="/admin-users" element={<AdminUsers/>} />
       </Routes>
     </Router>
   );
