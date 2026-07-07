@@ -5,7 +5,6 @@ import FilterBar from "../../components/merchant/Filterbar";
 import MasterCodeCard from "../../components/merchant/MasterCodeCard";
 import MasterCodeTable from "../../components/merchant/MasterCodeTable";
 import MasterCodeDetailModal from "../../components/merchant/MasterCodeDetailModal";
-import { API_URL } from "../../lib/masterCodeCatalog";
 import MerchantNavbar from "../../components/merchant/MerchantNavbar";
 
 /* Demo data shown when the backend is not reachable, so the UI is previewable */
@@ -250,7 +249,7 @@ export default function MerchantDashboard() {
                   ⚠️ El servidor no está disponible. Mostrando datos de demostración.
                 </p>
                 <p className="text-xs text-amber-600 mt-1">
-                  Asegúrate de que el backend esté corriendo en {API_URL}
+                  Asegúrate de que el servidor esté disponible
                 </p>
               </div>
             )}
@@ -280,7 +279,7 @@ export default function MerchantDashboard() {
 
         <p className="text-xs text-slate-400 text-right">
           Mostrando {filtered.length} de {records.length} códigos
-          {apiOnline && ` · Conectado a ${API_URL}`}
+          {apiOnline && ` · Conectado`}
         </p>
       </main>
 
