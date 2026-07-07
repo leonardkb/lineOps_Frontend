@@ -12,7 +12,7 @@ import AdvancedPlanningPage from "./pages/AdvancedPlanningPage";
 import Overview from "./pages/Overview";
 import ActualEfficiency from "./pages/ActualEfficiency";
 import QualityInspectorPage from "./pages/QualityInspectorPage";
-import QualityAnalytics from "./pages/Qualityanalytics";
+import QualityAnalytics from "./pages/QualityAnalytics";
 import EditOperationPlanner from "./pages/EditOperationPlanner";
 import MerchantDashboard from "./pages/merchant/MerchantDashboard";
 import MerchantPage from "./pages/merchant/MerchantPage";
