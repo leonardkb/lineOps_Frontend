@@ -40,7 +40,7 @@ export default function App() {
         <Route path="/edit-operation" element={<EditOperationPlanner />} />  {/*edit operation route */}
         <Route path="/merchant-dashboard" element={<MerchantDashboard />} /> {/*merchant dashboard route */}
         <Route path="/merchant" element={<MerchantPage />} /> {/*merchant route */}
-        <Route path="/mecanics"        element={<MechanicsDashboard/>} />
+        <Route path="/mecanics" element={<MechanicsDashboard/>} />
       </Routes>
     </Router>
   );
