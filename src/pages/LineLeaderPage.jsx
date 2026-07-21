@@ -922,14 +922,9 @@ export default function LineLeaderPage() {
   
 
   // ========== EXPORT TICKET AS ZPL ==========
-    function downloadTicketZPL() {
-    const qrData = JSON.stringify({
-      wo: ticket.workOrderNo,
-      style: ticket.style,
-      qty: ticket.qty,
-      runId: ticket.runId,
-      date: ticket.date,
-    });
+  function downloadTicketZPL() {
+    // Short payload — just enough to identify the run for lookup
+    const qrData = `WO:${ticket.workOrderNo}|RUN:${ticket.runId}`;
 
     const zpl = `
 ^XA
@@ -937,20 +932,20 @@ export default function LineLeaderPage() {
 ^LL600
 ^CI28
 
-^FO30,30^A0N,48,48^FD${ticket.workOrderNo}^FS
-^FO30,90^GB680,3,3^FS
+^FO30,30^A0N,44,44^FD${ticket.workOrderNo}^FS
+^FO30,84^GB680,3,3^FS
 
-^FO30,120^A0N,36,36^FDEstilo: ${ticket.style}^FS
-^FO30,170^A0N,36,36^FDLinea: ${ticket.line}^FS
-^FO30,220^A0N,36,36^FDFecha: ${ticket.date}^FS
+^FO30,110^A0N,32,32^FDEstilo: ${ticket.style}^FS
+^FO30,152^A0N,32,32^FDLinea: ${ticket.line}^FS
+^FO30,194^A0N,32,32^FDFecha: ${ticket.date}^FS
 
-^FO30,300^A0N,32,32^FDCANTIDAD PRODUCIDA^FS
-^FO30,345^A0N,120,120^FD${ticket.qty}^FS
-^FO30,475^A0N,26,26^FDpiezas^FS
+^FO30,270^A0N,28,28^FDCANTIDAD PRODUCIDA^FS
+^FO30,308^A0N,64,64^FD${ticket.qty}^FS
+^FO30,382^A0N,24,24^FDpiezas^FS
 
-^FO830,70^BQN,2,7
-^FDLA,${qrData}^FS
-^FO830,510^A0N,24,24^FDCorrida #${ticket.runId}^FS
+^FO830,70^BQN,2,6
+^FDQA,${qrData}^FS
+^FO830,510^A0N,22,22^FDCorrida #${ticket.runId}^FS
 
 ^XZ
 `.trim();
