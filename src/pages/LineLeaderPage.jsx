@@ -888,6 +888,8 @@ export default function LineLeaderPage() {
   }
 
   // ========== EXPORT TICKET AS JPEG ==========
+ // ⬇️ ADD THESE THREE FUNCTIONS RIGHT HERE ⬇️
+
   async function downloadTicketImage() {
     const el = document.getElementById("print-ticket");
     if (!el) return;
@@ -917,8 +919,10 @@ export default function LineLeaderPage() {
     }, "image/jpeg", 0.95);
   }
 
+  
+
   // ========== EXPORT TICKET AS ZPL ==========
-  function downloadTicketZPL() {
+    function downloadTicketZPL() {
     const qrData = JSON.stringify({
       wo: ticket.workOrderNo,
       style: ticket.style,
@@ -929,16 +933,25 @@ export default function LineLeaderPage() {
 
     const zpl = `
 ^XA
+^PW1200
+^LL600
 ^CI28
-^FO40,30^A0N,40,40^FD${ticket.workOrderNo}^FS
-^FO40,90^A0N,25,25^FDEstilo: ${ticket.style}^FS
-^FO40,125^A0N,25,25^FDLinea: ${ticket.line}^FS
-^FO40,160^A0N,25,25^FDFecha: ${ticket.date}^FS
-^FO40,210^A0N,28,28^FDCANTIDAD PRODUCIDA^FS
-^FO40,250^A0N,90,90^FD${ticket.qty}^FS
-^FO40,360^BQN,2,6
+
+^FO30,30^A0N,48,48^FD${ticket.workOrderNo}^FS
+^FO30,90^GB680,3,3^FS
+
+^FO30,120^A0N,36,36^FDEstilo: ${ticket.style}^FS
+^FO30,170^A0N,36,36^FDLinea: ${ticket.line}^FS
+^FO30,220^A0N,36,36^FDFecha: ${ticket.date}^FS
+
+^FO30,300^A0N,32,32^FDCANTIDAD PRODUCIDA^FS
+^FO30,345^A0N,120,120^FD${ticket.qty}^FS
+^FO30,475^A0N,26,26^FDpiezas^FS
+
+^FO830,70^BQN,2,7
 ^FDLA,${qrData}^FS
-^FO40,620^A0N,20,20^FDCorrida #${ticket.runId}^FS
+^FO830,510^A0N,24,24^FDCorrida #${ticket.runId}^FS
+
 ^XZ
 `.trim();
 
