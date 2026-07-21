@@ -921,19 +921,18 @@ export default function LineLeaderPage() {
 
   
 
-  // ========== EXPORT TICKET AS ZPL ==========
- function downloadTicketZPL() {
-    const qrData = `WO:${ticket.workOrderNo}|RUN:${ticket.runId}`;
+function downloadTicketZPL() {
+  const qrData = `WO:${ticket.workOrderNo}|RUN:${ticket.runId}`;
 
-    const zpl = `
+  const zpl = `
 ^XA
-^PW1200
-^LL600
+^PW812
+^LL609
 ^CI28
 ^MD25
 
 ^FO30,30^A0N,44,44^FD${ticket.workOrderNo}^FS
-^FO30,84^GB680,3,3^FS
+^FO30,84^GB760,3,3^FS
 
 ^FO30,110^A0N,32,32^FDEstilo: ${ticket.style}^FS
 ^FO30,152^A0N,32,32^FDLinea: ${ticket.line}^FS
@@ -943,21 +942,21 @@ export default function LineLeaderPage() {
 ^FO30,308^A0N,64,64^FD${ticket.qty}^FS
 ^FO30,382^A0N,24,24^FDpiezas^FS
 
-^FO900,220^BQN,2,4
+^FO540,110^BQN,2,6
 ^FDQA,${qrData}^FS
-^FO880,400^A0N,20,20^FDCorrida #${ticket.runId}^FS
+^FO540,330^A0N,20,20^FDCorrida #${ticket.runId}^FS
 
 ^XZ
 `.trim();
 
-    const blob = new Blob([zpl], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `ticket_${ticket.runId}.zpl`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
+  const blob = new Blob([zpl], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `ticket_${ticket.runId}.zpl`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
   // ========== TICKET (QR) ==========
   async function openTicket() {
