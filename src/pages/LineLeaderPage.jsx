@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import MetaSummary from "../components/MetaSummary";
 import NavBarline from "../components/NavBarline";
 import QRCode from "qrcode";
+import html2canvas from "html2canvas";
 
 function safeNum(v) {
   const n = Number(v);
@@ -886,6 +887,70 @@ export default function LineLeaderPage() {
     }
   }
 
+  // ========== EXPORT TICKET AS JPEG ==========
+  async function downloadTicketImage() {
+    const el = document.getElementById("print-ticket");
+    if (!el) return;
+    const canvas = await html2canvas(el, { scale: 3, backgroundColor: "#ffffff" });
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = `ticket_${ticket.workOrderNo}_${ticket.runId}.jpg`;
+    link.click();
+  }
+
+  async function shareTicketImage() {
+    const el = document.getElementById("print-ticket");
+    if (!el) return;
+    const canvas = await html2canvas(el, { scale: 3, backgroundColor: "#ffffff" });
+    canvas.toBlob(async (blob) => {
+      const file = new File([blob], `ticket_${ticket.runId}.jpg`, { type: "image/jpeg" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: "Ticket de producción" });
+        } catch (e) {
+          console.log("Compartir cancelado:", e);
+        }
+      } else {
+        downloadTicketImage();
+      }
+    }, "image/jpeg", 0.95);
+  }
+
+  // ========== EXPORT TICKET AS ZPL ==========
+  function downloadTicketZPL() {
+    const qrData = JSON.stringify({
+      wo: ticket.workOrderNo,
+      style: ticket.style,
+      qty: ticket.qty,
+      runId: ticket.runId,
+      date: ticket.date,
+    });
+
+    const zpl = `
+^XA
+^CI28
+^FO40,30^A0N,40,40^FD${ticket.workOrderNo}^FS
+^FO40,90^A0N,25,25^FDEstilo: ${ticket.style}^FS
+^FO40,125^A0N,25,25^FDLinea: ${ticket.line}^FS
+^FO40,160^A0N,25,25^FDFecha: ${ticket.date}^FS
+^FO40,210^A0N,28,28^FDCANTIDAD PRODUCIDA^FS
+^FO40,250^A0N,90,90^FD${ticket.qty}^FS
+^FO40,360^BQN,2,6
+^FDLA,${qrData}^FS
+^FO40,620^A0N,20,20^FDCorrida #${ticket.runId}^FS
+^XZ
+`.trim();
+
+    const blob = new Blob([zpl], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ticket_${ticket.runId}.zpl`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   // ========== TICKET (QR) ==========
   async function openTicket() {
     if (!currentStyle?.run) return;
@@ -1562,36 +1627,46 @@ export default function LineLeaderPage() {
             </div>
 
             <div className="no-print" style={{ display: "flex", gap: 10, marginTop: 12 }}>
+              <div className="no-print" style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
               <button
-                onClick={() => window.print()}
+                onClick={shareTicketImage}
                 style={{
-                  flex: 1,
-                  background: "#1a1a18",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 10,
-                  padding: "12px",
-                  fontSize: 15,
-                  fontWeight: 600,
+                  background: "#1a1a18", color: "#fff", border: "none",
+                  borderRadius: 10, padding: "12px", fontSize: 15, fontWeight: 600,
                 }}
               >
-                🖨️ Imprimir / Guardar PDF
+                📤 Compartir / Imprimir imagen
               </button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={downloadTicketImage}
+                  style={{
+                    flex: 1, background: "#fff", color: "#1a1a18", border: "1px solid #d8d8d2",
+                    borderRadius: 10, padding: "12px", fontSize: 14, fontWeight: 600,
+                  }}
+                >
+                  🖼️ Descargar JPG
+                </button>
+                <button
+                  onClick={downloadTicketZPL}
+                  style={{
+                    flex: 1, background: "#fff", color: "#1a1a18", border: "1px solid #d8d8d2",
+                    borderRadius: 10, padding: "12px", fontSize: 14, fontWeight: 600,
+                  }}
+                >
+                  🏷️ Descargar ZPL
+                </button>
+              </div>
               <button
                 onClick={() => setTicket(null)}
                 style={{
-                  flex: 1,
-                  background: "#fff",
-                  color: "#1a1a18",
-                  border: "1px solid #d8d8d2",
-                  borderRadius: 10,
-                  padding: "12px",
-                  fontSize: 15,
-                  fontWeight: 600,
+                  background: "#fff", color: "#1a1a18", border: "1px solid #d8d8d2",
+                  borderRadius: 10, padding: "10px", fontSize: 14, fontWeight: 600,
                 }}
               >
                 Cerrar
               </button>
+            </div>
             </div>
           </div>
         </div>
