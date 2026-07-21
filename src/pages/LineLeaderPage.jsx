@@ -922,8 +922,7 @@ export default function LineLeaderPage() {
   
 
   // ========== EXPORT TICKET AS ZPL ==========
-  function downloadTicketZPL() {
-    // Short payload — just enough to identify the run for lookup
+ function downloadTicketZPL() {
     const qrData = `WO:${ticket.workOrderNo}|RUN:${ticket.runId}`;
 
     const zpl = `
@@ -931,6 +930,7 @@ export default function LineLeaderPage() {
 ^PW1200
 ^LL600
 ^CI28
+^MD25
 
 ^FO30,30^A0N,44,44^FD${ticket.workOrderNo}^FS
 ^FO30,84^GB680,3,3^FS
@@ -943,9 +943,9 @@ export default function LineLeaderPage() {
 ^FO30,308^A0N,64,64^FD${ticket.qty}^FS
 ^FO30,382^A0N,24,24^FDpiezas^FS
 
-^FO830,70^BQN,2,6
+^FO900,220^BQN,2,4
 ^FDQA,${qrData}^FS
-^FO830,510^A0N,22,22^FDCorrida #${ticket.runId}^FS
+^FO880,400^A0N,20,20^FDCorrida #${ticket.runId}^FS
 
 ^XZ
 `.trim();
