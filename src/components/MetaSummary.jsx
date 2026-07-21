@@ -23,6 +23,7 @@ export default function MetaSummary({ header, target, slots }) {
       <div className="p-5 space-y-3">
         
         {/* Basic Info */}
+        <Row k="Orden de Trabajo" v={header.workOrderNo || "—"} />
         <Row k="Línea" v={header.line || "—"} />
         <Row k="Fecha" v={header.date || "—"} />
         <Row k="Estilo" v={header.style || "—"} />
@@ -53,33 +54,35 @@ export default function MetaSummary({ header, target, slots }) {
         </div>
 
         {/* Shift Distribution */}
-        <div className="rounded-xl border bg-gray-50 p-3">
-          <div className="text-xs font-medium text-gray-700 mb-2">
-            Distribución de Horas del Turno
-          </div>
 
-          {slots?.length ? (
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              {slots.map((s) => (
-                <div
-                  key={s.id}
-                  className="flex items-center justify-between rounded-lg bg-white border px-3 py-2"
-                >
-                  <span className="text-gray-700">
-                    {s.label}
-                  </span>
-                  <span className="font-medium text-gray-900">
-                    {s.hours}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-sm text-gray-600">
-              Ingrese las horas de trabajo para generar los bloques.
-            </div>
-          )}
+<div className="rounded-xl border bg-gray-50 p-3">
+  <div className="text-xs font-medium text-gray-700 mb-2">
+    Distribución de Horas del Turno
+    <span className="text-xs text-gray-500 ml-2">(Click ✎ en la cabecera para editar)</span>
+  </div>
+
+  {slots?.length ? (
+    <div className="grid grid-cols-2 gap-2 text-sm">
+      {slots.map((s) => (
+        <div
+          key={s.id}
+          className="flex items-center justify-between rounded-lg bg-white border px-3 py-2"
+        >
+          <span className="text-gray-700">
+            {s.label}
+          </span>
+          <span className="font-medium text-gray-900">
+            {s.hours}
+          </span>
         </div>
+      ))}
+    </div>
+  ) : (
+    <div className="text-sm text-gray-600">
+      Ingrese las horas de trabajo para generar los bloques.
+    </div>
+  )}
+</div>
       </div>
     </div>
   );

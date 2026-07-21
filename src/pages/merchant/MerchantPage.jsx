@@ -432,11 +432,9 @@ export default function MerchantPage() {
   const handlePhoto = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setPhoto({ file, url: URL.createObjectURL(file), base64: reader.result });
-    };
-    reader.readAsDataURL(file);
+    // No base64: we upload the raw file straight to S3 via a presigned URL.
+    // URL.createObjectURL is only used for the on-screen preview.
+    setPhoto({ file, url: URL.createObjectURL(file) });
   };
 
   const showToast = (msg, isError = false) => {
@@ -450,12 +448,43 @@ export default function MerchantPage() {
     await createSingleCode();
   };
 
-  const createSingleCode = async (tallaOverride = null) => {
+  const createSingleCode = async (tallaOverride = null, photoKeyOverride = null) => {
     const tallaToUse = tallaOverride || form.talla;
     const codeToCreate = `${form.type}${form.modelo}${form.correlativo}${tallaToUse}${form.cliente}-${form.color}-${form.estilo}`;
 
     try {
       const token = localStorage.getItem("token");
+
+      // 1) If there's a photo, upload it DIRECTLY to S3 first (bypasses the
+      //    CloudFront/API Gateway size limit that caused the 413). We only send
+      //    the small S3 key to our API afterwards.
+      let photoKey = photoKeyOverride;
+      if (photo?.file && !photoKey) {
+        const presignRes = await fetch(`/api/master-codes/photo-upload-url`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            filename: photo.file.name,
+            contentType: photo.file.type,
+          }),
+        });
+        const presign = await presignRes.json();
+        if (!presignRes.ok) throw new Error(presign.error || "Could not get upload URL");
+
+        const putRes = await fetch(presign.uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Type": photo.file.type },
+          body: photo.file, // raw bytes straight to S3 — no size wall
+        });
+        if (!putRes.ok) throw new Error("S3 upload failed");
+
+        photoKey = presign.photoKey;
+      }
+
+      // 2) Create the master code with only the key (tiny JSON body).
       const response = await fetch(`/api/master-codes`, {
         method: "POST",
         headers: {
@@ -473,8 +502,7 @@ export default function MerchantPage() {
           estilo: form.estilo,
           description: description.trim(),
           sam: Number(sam),
-          photoBase64: photo?.base64 || null,
-          photoFilename: photo?.file?.name || null,
+          photoKey: photoKey || null,
         }),
       });
       const data = await response.json();
@@ -498,7 +526,7 @@ export default function MerchantPage() {
         },
         ...r,
       ]);
-      return { success: true, code: codeToCreate };
+      return { success: true, code: codeToCreate, photoKey };
     } catch (err) {
       console.error("Error saving master code:", err);
       showToast(`❌ Error: ${err.message}`, true);
@@ -512,11 +540,13 @@ export default function MerchantPage() {
     setIsLoading(true);
     let created = 0;
     let failed = 0;
+    let sharedPhotoKey = null; // upload the photo once, reuse the key for every size
 
     for (const talla of selectedSizes) {
-      const result = await createSingleCode(talla);
+      const result = await createSingleCode(talla, sharedPhotoKey);
       if (result.success) {
         created++;
+        if (!sharedPhotoKey && result.photoKey) sharedPhotoKey = result.photoKey;
       } else {
         failed++;
       }

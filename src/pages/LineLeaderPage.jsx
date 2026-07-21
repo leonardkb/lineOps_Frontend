@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import MetaSummary from "../components/MetaSummary";
 import NavBarline from "../components/NavBarline";
+import QRCode from "qrcode";
 
 function safeNum(v) {
   const n = Number(v);
@@ -272,6 +273,7 @@ export default function LineLeaderPage() {
   const [errMsg, setErrMsg] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
+  const [ticket, setTicket] = useState(null);
 
   // Multi-style state
   const [styles, setStyles] = useState([]);
@@ -348,6 +350,7 @@ export default function LineLeaderPage() {
       line: "",
       date: "",
       style: "",
+      workOrderNo: "",
       operators: "0",
       sam: "0",
       workingHours: "0",
@@ -359,6 +362,7 @@ export default function LineLeaderPage() {
       line: String(run.line_no ?? ""),
       date: String(run.run_date ?? ""),
       style: String(run.style ?? ""),
+      workOrderNo: String(run.work_order_no ?? ""),
       operators: String(run.operators_count ?? ""),
       sam: String(run.sam_minutes ?? ""),
       workingHours: String(run.working_hours ?? ""),
@@ -871,6 +875,8 @@ export default function LineLeaderPage() {
       setAlarmVisible(false);
       setSaveMsg(`✅ Actualizaciones por hora guardadas para ${currentStyle.run.style}`);
 
+      await openTicket();
+
       // Refresh data
       await fetchLatestStyleGroup(user.line_number);
     } catch (e) {
@@ -878,6 +884,37 @@ export default function LineLeaderPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  // ========== TICKET (QR) ==========
+  async function openTicket() {
+    if (!currentStyle?.run) return;
+
+    const workOrderNo = header.workOrderNo || "—";
+    const style = header.style || "—";
+    const qty = finishedGarmentsTotal || 0;
+    const runId = currentStyle.run.id;
+    const dateStr = header.date ? header.date.split("T")[0] : "";
+
+    // What the QR encodes (scannable for traceability)
+    const qrPayload = JSON.stringify({ wo: workOrderNo, style, qty, runId, date: dateStr });
+
+    let qrDataUrl = "";
+    try {
+      qrDataUrl = await QRCode.toDataURL(qrPayload, { margin: 1, width: 300 });
+    } catch (e) {
+      console.error("Error generando QR:", e);
+    }
+
+    setTicket({
+      workOrderNo,
+      style,
+      line: header.line || "—",
+      date: dateStr,
+      qty,
+      runId,
+      qrDataUrl,
+    });
   }
 
   // ========== REAL-TIME CALCULATIONS ==========
@@ -1033,6 +1070,11 @@ export default function LineLeaderPage() {
                 <span className="ml-3 inline-flex items-center rounded-full border bg-gray-50 px-3 py-1 text-sm text-gray-700">
                   {header.style || "Corrida"}
                 </span>
+                {header.workOrderNo && (
+                  <span className="ml-2 inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm text-blue-800">
+                    WO: {header.workOrderNo}
+                  </span>
+                )}
               </div>
 
               <div className="mt-2 text-sm text-gray-700">
@@ -1411,25 +1453,36 @@ export default function LineLeaderPage() {
                         )}
                       </div>
                     </div>
-                    <button
-                      onClick={handleSave}
-                      disabled={saving || !currentStyle}
-                      className="rounded-xl bg-green-600 text-white px-8 py-3 text-base font-semibold
-                               hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed
-                               shadow-lg hover:shadow-xl transition-all"
-                    >
-                      {saving ? (
-                        <span className="flex items-center gap-2">
-                          <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
-                          Guardando...
-                        </span>
-                      ) : (
-                        '💾 Guardar producción'
-                      )}
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={handleSave}
+                        disabled={saving || !currentStyle}
+                        className="rounded-xl bg-green-600 text-white px-8 py-3 text-base font-semibold
+                                 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed
+                                 shadow-lg hover:shadow-xl transition-all"
+                      >
+                        {saving ? (
+                          <span className="flex items-center gap-2">
+                            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            Guardando...
+                          </span>
+                        ) : (
+                          '💾 Guardar producción'
+                        )}
+                      </button>
+                      <button
+                        onClick={openTicket}
+                        disabled={!currentStyle}
+                        className="rounded-xl bg-gray-900 text-white px-6 py-3 text-base font-semibold
+                                 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed
+                                 shadow-lg transition-all"
+                      >
+                        🖨️ Imprimir ticket
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1437,6 +1490,112 @@ export default function LineLeaderPage() {
           )}
         </div>
       </div>
+
+      {ticket && (
+        <div
+          onClick={() => setTicket(null)}
+          className="no-print"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+            zIndex: 1000,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 320, maxWidth: "100%" }}>
+            <div
+              id="print-ticket"
+              style={{
+                background: "#fff",
+                border: "1px solid #d8d8d2",
+                borderRadius: 10,
+                overflow: "hidden",
+                fontFamily: "-apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
+                color: "#1a1a18",
+              }}
+            >
+              <div style={{ background: "#1a1a18", color: "#fff", padding: "14px 16px", textAlign: "center" }}>
+                <div style={{ fontSize: 11, letterSpacing: 2, color: "#c9c9c2" }}>TICKET DE PRODUCCIÓN</div>
+                <div style={{ fontSize: 22, fontWeight: 600, marginTop: 4 }}>{ticket.workOrderNo}</div>
+              </div>
+
+              <div style={{ padding: "14px 16px" }}>
+                {[
+                  ["Estilo", ticket.style],
+                  ["Línea", ticket.line],
+                  ["Fecha", ticket.date],
+                ].map(([k, v], i, arr) => (
+                  <div
+                    key={k}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      padding: "7px 0",
+                      fontSize: 13,
+                      borderBottom: i < arr.length - 1 ? "1px solid #eee" : "none",
+                    }}
+                  >
+                    <span style={{ color: "#6b6b64" }}>{k}</span>
+                    <span style={{ fontWeight: 600, textAlign: "right" }}>{v}</span>
+                  </div>
+                ))}
+
+                <div style={{ margin: "14px 0", background: "#f4f4ef", borderRadius: 8, padding: 12, textAlign: "center" }}>
+                  <div style={{ fontSize: 11, letterSpacing: 1, color: "#6b6b64" }}>CANTIDAD PRODUCIDA</div>
+                  <div style={{ fontSize: 40, fontWeight: 600, lineHeight: 1.1, marginTop: 2 }}>{ticket.qty}</div>
+                  <div style={{ fontSize: 12, color: "#6b6b64" }}>piezas</div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 4 }}>
+                  <div style={{ border: "1px solid #e2e2dc", borderRadius: 8, padding: 8 }}>
+                    {ticket.qrDataUrl && <img src={ticket.qrDataUrl} width={150} height={150} alt="QR" />}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#9a9a92", marginTop: 8 }}>
+                    Escanea para verificar · Corrida #{ticket.runId}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="no-print" style={{ display: "flex", gap: 10, marginTop: 12 }}>
+              <button
+                onClick={() => window.print()}
+                style={{
+                  flex: 1,
+                  background: "#1a1a18",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 10,
+                  padding: "12px",
+                  fontSize: 15,
+                  fontWeight: 600,
+                }}
+              >
+                🖨️ Imprimir / Guardar PDF
+              </button>
+              <button
+                onClick={() => setTicket(null)}
+                style={{
+                  flex: 1,
+                  background: "#fff",
+                  color: "#1a1a18",
+                  border: "1px solid #d8d8d2",
+                  borderRadius: 10,
+                  padding: "12px",
+                  fontSize: 15,
+                  fontWeight: 600,
+                }}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
