@@ -26,6 +26,15 @@ const STEPS = [
   { n: 5, label: "Revisar", icon: ClipboardList },
 ];
 
+// Temporada codes. Stored value is code + 2-digit year, e.g. "SU26".
+const SEASONS = [
+  { code: "SP", label: "Spring" },
+  { code: "SU", label: "Summer" },
+  { code: "FA", label: "Fall" },
+  { code: "WN", label: "Winter" },
+  { code: "HO", label: "Holiday" },
+];
+
 function SectionCard({ icon: Icon, title, subtitle, children }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-sm">
@@ -94,6 +103,8 @@ export default function NuevaOrdenWizard() {
   const [sam, setSam] = useState("");
   const [photo, setPhoto] = useState(null);
   const [commitmentDate, setCommitmentDate] = useState("");
+  const [seasonCode, setSeasonCode] = useState("");
+  const [seasonYear, setSeasonYear] = useState(String(new Date().getFullYear()).slice(-2));
   const [selectedFabrics, setSelectedFabrics] = useState([]);
   const [newFabric, setNewFabric] = useState("");
   const [warehouseStock, setWarehouseStock] = useState("");
@@ -167,6 +178,7 @@ export default function NuevaOrdenWizard() {
     orderedQty - (parseFloat(warehouseStock) || 0) + (parseFloat(extraQuantity) || 0), 0
   );
   const poNumber = skmSeq && clienteCode && styleBase ? `${skmSeq}-${clienteCode}-${styleBase}` : "";
+  const season = seasonCode ? `${seasonCode}${seasonYear}` : "";
 
   // ------- step handlers ----------------------------------------------
   const toggleSize = (code) =>
@@ -246,13 +258,38 @@ export default function NuevaOrdenWizard() {
     if (!canCreate) return;
     setSaving(true);
     try {
+      // If a photo was chosen, upload it straight to S3 first (presigned PUT),
+      // then send only its key — never the image bytes (avoids the 413 limit).
+      let photoKey = null;
+      if (photo?.file) {
+        const presRes = await fetch(`${API_URL}/api/master-codes/photo-upload-url`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            filename: photo.file.name,
+            contentType: photo.file.type || "image/jpeg",
+          }),
+        });
+        const pres = await presRes.json();
+        if (!presRes.ok || !pres.uploadUrl) throw new Error(pres.error || "No se pudo preparar la subida de la foto");
+        const putRes = await fetch(pres.uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Type": photo.file.type || "application/octet-stream" },
+          body: photo.file,
+        });
+        if (!putRes.ok) throw new Error("No se pudo subir la foto a S3");
+        photoKey = pres.photoKey;
+      }
+
       const payload = {
         tipo, modelo, correlativo,
         clienteCode, customerId: Number(customerId), estilo,
         description: description.trim(), sam: Number(sam),
+        photoKey,
         lines: cells,
         workOrderNo: poNumber,
         commitmentDate: commitmentDate || null,
+        season: season || null,
         fabrics: selectedFabrics,
         warehouseStock: parseFloat(warehouseStock) || 0,
         extraQuantity: parseFloat(extraQuantity) || 0,
@@ -270,7 +307,7 @@ export default function NuevaOrdenWizard() {
       setSizes([]); setColorRows([{ color: "", qty: {} }]);
       setCustomerId(""); setClienteCode(""); setEstilo("");
       setDescription(""); setSam(""); setPhoto(null);
-      setCommitmentDate(""); setSelectedFabrics([]); setWarehouseStock(""); setExtraQuantity("");
+      setCommitmentDate(""); setSeasonCode(""); setSelectedFabrics([]); setWarehouseStock(""); setExtraQuantity("");
       if (fileRef.current) fileRef.current.value = "";
       const seqRes = await fetch(`${API_URL}/api/production-orders/next-number`, { headers: authHeaders() });
       if (seqRes.ok) setSkmSeq((await seqRes.json()).sequence || "");
@@ -490,6 +527,21 @@ export default function NuevaOrdenWizard() {
                   <input type="date" value={commitmentDate} onChange={(e) => setCommitmentDate(e.target.value)}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
                 </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1 uppercase tracking-wide">Temporada</label>
+                  <div className="flex gap-2">
+                    <select value={seasonCode} onChange={(e) => setSeasonCode(e.target.value)}
+                      className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-900">
+                      <option value="">Temporada…</option>
+                      {SEASONS.map((s) => <option key={s.code} value={s.code}>{s.code} · {s.label}</option>)}
+                    </select>
+                    <input value={seasonYear}
+                      onChange={(e) => setSeasonYear(e.target.value.replace(/[^0-9]/g, "").slice(0, 2))}
+                      inputMode="numeric" placeholder="26"
+                      className="w-16 rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-center focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">{season ? `= ${season}` : "código + año (ej. SU26)"}</p>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-500 mb-1 uppercase">Stock almacén</label>
@@ -548,6 +600,7 @@ export default function NuevaOrdenWizard() {
               <Info label="Códigos maestros" value={String(cells.length)} />
               <Info label="Cantidad pedida" value={orderedQty.toLocaleString()} />
               <Info label="SAM" value={sam ? `${sam} min` : "—"} />
+              <Info label="Temporada" value={season || "—"} />
               <Info label="Total a producir" value={totalToProduce.toLocaleString()} />
             </div>
             {missing.length > 0 && (

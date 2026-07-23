@@ -90,7 +90,7 @@ export default function HeaderForm({ value, onChange, slots, onSaveSuccess }) {
       setWoError("");
       try {
         const res = await fetch(
-          `/api/planning/line-work-orders?line=${encodeURIComponent(line)}`,
+          `${API_URL}/api/planning/line-work-orders?line=${encodeURIComponent(line)}`,
           { headers: authHeaders() }
         );
         const data = await res.json();
@@ -195,11 +195,14 @@ export default function HeaderForm({ value, onChange, slots, onSaveSuccess }) {
         workOrderNo: value.workOrderNo || "",
       };
 
-      const response = await fetch("/api/save-production", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const response = await fetch(`${API_URL}/api/save-production`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    ...authHeaders(),
+  },
+  body: JSON.stringify(payload),
+});
 
       const data = await response.json();
 
