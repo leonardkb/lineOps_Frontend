@@ -17,7 +17,7 @@ import EditOperationPlanner from "./pages/EditOperationPlanner";
 import MerchantDashboard from "./pages/merchant/MerchantDashboard";
 import MerchantPage from "./pages/merchant/MerchantPage";
 import MechanicsDashboard from "./pages/MechanicsDashboard";
-
+import NuevaOrdenWizard from "./components/merchant/NuevaOrdenWizard";
 
 export default function App() {
   return (
@@ -41,7 +41,7 @@ export default function App() {
         <Route path="/merchant-dashboard" element={<MerchantDashboard />} /> {/*merchant dashboard route */}
         <Route path="/merchant" element={<MerchantPage />} /> {/*merchant route */}
         <Route path="/mecanics" element={<MechanicsDashboard/>} />
-        
+         <Route path="/nuevo-orden-wizard"  element={<NuevaOrdenWizard/>} /> {/*new work order wizard route */}
       </Routes>
     </Router>
   );
