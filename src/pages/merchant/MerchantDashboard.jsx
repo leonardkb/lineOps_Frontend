@@ -5,7 +5,10 @@ import FilterBar from "../../components/merchant/Filterbar";
 import MasterCodeCard from "../../components/merchant/MasterCodeCard";
 import MasterCodeTable from "../../components/merchant/MasterCodeTable";
 import MasterCodeDetailModal from "../../components/merchant/MasterCodeDetailModal";
+import MasterCodeEditModal from "../../components/merchant/MasterCodeEditModal";
 import WorkOrderTable from "../../components/merchant/WorkOrderTable";
+import WorkOrderEditModal from "../../components/merchant/WorkOrderEditModal";
+import MerchantPlanner from "../../components/merchant/MerchantPlanner";
 import { API_URL } from "../../lib/masterCodeCatalog";
 import MerchantNavbar from "../../components/merchant/MerchantNavbar";
 
@@ -50,7 +53,7 @@ const DEMO_ORDERS = [
 ];
 
 export default function MerchantDashboard() {
-  const [tab, setTab] = useState("master"); // "master" | "po"
+  const [tab, setTab] = useState("master"); // "master" | "po" | "plan"
 
   const [records, setRecords] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -61,6 +64,8 @@ export default function MerchantDashboard() {
   const [poQuery, setPoQuery] = useState("");
   const [view, setView] = useState("grid"); // "grid" | "table"
   const [selected, setSelected] = useState(null);
+  const [editingRecord, setEditingRecord] = useState(null);
+  const [editingOrder, setEditingOrder] = useState(null);
   const [toast, setToast] = useState(null);
 
   const showToast = (msg, isError = false) => {
@@ -185,6 +190,39 @@ export default function MerchantDashboard() {
     window.location.href = `/merchant?copy=${encodeURIComponent(code)}`;
   };
 
+  // ---- Edit: master codes -------------------------------------------------
+  const openEditRecord = (record) => {
+    setSelected(null);
+    setEditingRecord(record);
+  };
+
+  const handleMasterSaved = (updated, original) => {
+    setRecords((rs) =>
+      rs.map((r) => {
+        const same = original?.id ? r.id === original.id : r.code === original?.code;
+        return same ? { ...r, ...updated } : r;
+      })
+    );
+    setEditingRecord(null);
+    showToast("✅ Código actualizado");
+    if (apiOnline) fetchRecords(); // resync (fresh photo URLs, correlativo, etc.)
+  };
+
+  // ---- Edit: production orders -------------------------------------------
+  const openEditOrder = (order) => setEditingOrder(order);
+
+  const handleOrderSaved = (updated, original) => {
+    setOrders((os) =>
+      os.map((o) => {
+        const same = original?.id ? o.id === original.id : o.work_order_no === original?.work_order_no;
+        return same ? { ...o, ...updated } : o;
+      })
+    );
+    setEditingOrder(null);
+    showToast("✅ Orden actualizada");
+    if (apiOnline) fetchOrders();
+  };
+
   const deleteRecord = async (record) => {
     if (!window.confirm(`¿Eliminar ${record.code}?`)) return;
     if (apiOnline) {
@@ -251,6 +289,7 @@ export default function MerchantDashboard() {
         <div className="flex gap-2">
           <TabButton id="master" label="Códigos maestros" count={records.length} />
           <TabButton id="po" label="Órdenes de producción" count={orders.length} />
+          <TabButton id="plan" label="Planeación" count={orders.length} />
         </div>
 
         {/* ---------------- MASTER CODES ---------------- */}
@@ -287,12 +326,12 @@ export default function MerchantDashboard() {
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filtered.map((r) => (
                   <MasterCodeCard key={r.id || r.code} record={r}
-                    onOpen={setSelected} onCopy={copyCode} onDuplicate={duplicateCode} onDelete={deleteRecord} />
+                    onOpen={setSelected} onCopy={copyCode} onDuplicate={duplicateCode} onEdit={openEditRecord} onDelete={deleteRecord} />
                 ))}
               </div>
             ) : (
               <MasterCodeTable records={filtered}
-                onOpen={setSelected} onCopy={copyCode} onDuplicate={duplicateCode} onDelete={deleteRecord} />
+                onOpen={setSelected} onCopy={copyCode} onDuplicate={duplicateCode} onEdit={openEditRecord} onDelete={deleteRecord} />
             )}
 
             <p className="text-xs text-slate-400 text-right">
@@ -330,7 +369,7 @@ export default function MerchantDashboard() {
                 </p>
               </div>
             ) : (
-              <WorkOrderTable orders={filteredOrders} />
+              <WorkOrderTable orders={filteredOrders} onEdit={openEditOrder} />
             )}
 
             <p className="text-xs text-slate-400 text-right">
@@ -339,11 +378,46 @@ export default function MerchantDashboard() {
             </p>
           </>
         )}
+
+        {/* ---------------- PLANNING BOARD ---------------- */}
+        {tab === "plan" && (
+          <MerchantPlanner
+            orders={orders}
+            loading={ordersLoading}
+            apiOnline={apiOnline}
+            onRefresh={fetchOrders}
+          />
+        )}
       </main>
 
       {/* Detail modal (master codes) */}
       {selected && (
-        <MasterCodeDetailModal record={selected} onClose={() => setSelected(null)} onCopy={copyCode} />
+        <MasterCodeDetailModal
+          record={selected}
+          onClose={() => setSelected(null)}
+          onCopy={copyCode}
+          onEdit={openEditRecord}
+        />
+      )}
+
+      {/* Edit modal (master codes) */}
+      {editingRecord && (
+        <MasterCodeEditModal
+          record={editingRecord}
+          apiOnline={apiOnline}
+          onClose={() => setEditingRecord(null)}
+          onSaved={handleMasterSaved}
+        />
+      )}
+
+      {/* Edit modal (production orders) */}
+      {editingOrder && (
+        <WorkOrderEditModal
+          order={editingOrder}
+          apiOnline={apiOnline}
+          onClose={() => setEditingOrder(null)}
+          onSaved={handleOrderSaved}
+        />
       )}
 
       {/* Toast */}

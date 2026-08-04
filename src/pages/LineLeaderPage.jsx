@@ -523,21 +523,19 @@ export default function LineLeaderPage() {
 
     try {
       // First, try to get runs grouped by style_group_id
-      const res = await fetch(
+      const json = await fetchJson(
         `/api/multi-style/latest-group?line=${encodeURIComponent(lineNo)}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      const json = await res.json();
 
       if (json.success && json.styles && json.styles.length > 0) {
         // Load complete data for each style
         const stylesData = [];
         for (const style of json.styles) {
-          const runDataRes = await fetch(
+          const runDataJson = await fetchJson(
             `/api/get-run-data/${style.run.id}`,
             { headers: { Authorization: `Bearer ${token}` } }
           );
-          const runDataJson = await runDataRes.json();
           
           if (runDataJson.success) {
             stylesData.push({
@@ -575,11 +573,10 @@ export default function LineLeaderPage() {
   async function fetchSingleStyleRuns(lineNo) {
     const token = getToken();
     try {
-      const res = await fetch(
+      const json = await fetchJson(
         `/api/lineleader/latest-run?line=${encodeURIComponent(lineNo)}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      const json = await res.json();
       
       if (!json.success) {
         setErrMsg(json.error || "No se encontraron corridas para esta línea");
@@ -587,11 +584,10 @@ export default function LineLeaderPage() {
         return;
       }
       
-      const runDataRes = await fetch(
+      const runDataJson = await fetchJson(
         `/api/get-run-data/${json.run.id}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      const runDataJson = await runDataRes.json();
       
       if (runDataJson.success) {
         const stylesData = [{
@@ -654,10 +650,9 @@ export default function LineLeaderPage() {
     if (!token) return;
 
     try {
-      const res = await fetch(`/api/lineleader/assignments/${runId}`, {
+      const json = await fetchJson(`/api/lineleader/assignments/${runId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const json = await res.json();
       if (json.success) setAssignments(json.assignments);
     } catch (e) {
       console.error("Error fetching assignments:", e);
@@ -805,6 +800,40 @@ export default function LineLeaderPage() {
     return total;
   }, [styles, sewedInputs]);
 
+  // Un fetch que NO revisa res.ok convierte un 404 en "guardado con exito":
+  // res.json() sobre una respuesta de error devuelve un objeto sin `success`,
+  // y el flujo sigue como si todo hubiera salido bien. Este helper obliga a
+  // que cualquier respuesta que no sea 2xx truene con un mensaje util.
+  async function fetchJson(url, options = {}) {
+    const res = await fetch(url, options);
+
+    if (res.status === 401 || res.status === 403) {
+      throw new Error("Tu sesion expiro. Inicia sesion de nuevo.");
+    }
+    if (res.status === 404) {
+      throw new Error(`La ruta ${url} no existe en el servidor (404).`);
+    }
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      throw new Error(detail.error || `El servidor respondio ${res.status}`);
+    }
+
+    // El dev server de Vite responde index.html (200) a cualquier ruta que no
+    // reconoce. Si eso pasa con /api/... es que la peticion nunca llego al
+    // backend: falta el proxy en vite.config.js o la ruta no existe en el
+    // servidor. Sin esta revision el error real se disfraza de "Unexpected
+    // token '<'", que no dice nada sobre la causa.
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error(
+        `${url} devolvio HTML en vez de JSON. La peticion no llego al backend: ` +
+        `revisa el proxy de /api en vite.config.js o que la ruta exista en el servidor.`
+      );
+    }
+
+    return res.json();
+  }
+
   // ========== SAVE FUNCTION ==========
   async function handleSave() {
     if (!currentStyle || !currentStyle.run?.id) return;
@@ -839,7 +868,7 @@ export default function LineLeaderPage() {
         }
       }
 
-      const res = await fetch(`/api/lineleader/update-sewed/${runId}`, {
+      const json = await fetchJson(`/api/lineleader/update-sewed/${runId}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -848,7 +877,6 @@ export default function LineLeaderPage() {
         body: JSON.stringify({ entries }),
       });
 
-      const json = await res.json();
       if (!json.success) {
         setErrMsg(json.error || "No se pudieron guardar los datos cosidos.");
         return;

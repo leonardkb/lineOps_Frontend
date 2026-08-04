@@ -18,6 +18,8 @@ import MerchantDashboard from "./pages/merchant/MerchantDashboard";
 import MerchantPage from "./pages/merchant/MerchantPage";
 import MechanicsDashboard from "./pages/MechanicsDashboard";
 import NuevaOrdenWizard from "./components/merchant/NuevaOrdenWizard";
+import CuttingApp from "./pages/Corte/CuttingApp";
+import FinishedWarehouse from "./pages/FWHS/FinishedWarehouse";
 
 export default function App() {
   return (
@@ -42,6 +44,8 @@ export default function App() {
         <Route path="/merchant" element={<MerchantPage />} /> {/*merchant route */}
         <Route path="/mecanics" element={<MechanicsDashboard/>} />
          <Route path="/nuevo-orden-wizard"  element={<NuevaOrdenWizard/>} /> {/*new work order wizard route */}
+          <Route path="/cutting" element={<CuttingApp />} /> {/*cutting app route */}
+        <Route path="/fws" element={<FinishedWarehouse />} /> {/*finished warehouse route */}  
       </Routes>
     </Router>
   );

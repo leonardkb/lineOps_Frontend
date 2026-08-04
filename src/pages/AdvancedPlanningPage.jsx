@@ -5,6 +5,7 @@ import PlanningDashboard from "../components/planner/PlanningDashboard";
 import WorkOrderList from "../components/planner/WorkOrderList";
 import WorkOrderForm from "../components/planner/WorkOrderForm";
 import OrderStatus from "../components/planner/OrderStatus";
+import CutOrders from "../components/planner/CutOrders";
 import LineAssignmentForm from "../components/planner/LineAssignmentForm";
 import PlanBoard from "../components/planner/PlanBoard";
 
@@ -64,6 +65,7 @@ export default function AdvancedPlanningPage() {
     { id: "list", label: "Órdenes", visible: true },
     { id: "planboard", label: "Plan Board", visible: true },
     { id: "status", label: "Estado de Órdenes", visible: true },
+    { id: "cut", label: "Corte", visible: true },
     // Hidden contextual tabs
     { id: "edit", label: "Editar Orden", visible: woMode === "edit" && selectedWorkOrder !== null },
     { id: "assign", label: "Asignar", visible: woMode === "assign" && selectedWorkOrder !== null },
@@ -109,7 +111,7 @@ export default function AdvancedPlanningPage() {
                   key={tab.id}
                   onClick={() => {
                     // The always-visible tabs are not tied to a selected order.
-                    if (["dashboard", "list", "planboard", "status"].includes(tab.id)) {
+                    if (["dashboard", "list", "planboard", "status", "cut"].includes(tab.id)) {
                       clearSelection();
                     }
                     setActiveTab(tab.id);
@@ -134,6 +136,8 @@ export default function AdvancedPlanningPage() {
 
           {/* Read-only order status view (assignment happens in Plan Board) */}
           {activeTab === "status" && <OrderStatus />}
+
+          {activeTab === "cut" && <CutOrders />}
 
           {activeTab === "list" && (
             <WorkOrderList

@@ -1,14 +1,14 @@
 import { useState } from "react";
-import { Camera, Timer, Copy, Trash2, Plus, ZoomIn, X } from "lucide-react";
+import { Camera, Timer, Copy, Trash2, Plus, ZoomIn, X, Pencil } from "lucide-react";
 import MasterCodeBadge from "./MasterCodeBadge";
 import { tipoLabel, modeloLabel, tallaLabel } from "../../lib/masterCodeCatalog";
 
 /*
   Compact card: small photo on the LEFT, details on the RIGHT.
   Clicking the thumbnail opens a full-size viewer; clicking the rest opens detail.
-  <MasterCodeCard record={r} onOpen={fn} onCopy={fn} onDuplicate={fn} onDelete={fn} />
+  <MasterCodeCard record={r} onOpen={fn} onCopy={fn} onDuplicate={fn} onEdit={fn} onDelete={fn} />
 */
-export default function MasterCodeCard({ record, onOpen, onCopy, onDuplicate, onDelete }) {
+export default function MasterCodeCard({ record, onOpen, onCopy, onDuplicate, onEdit, onDelete }) {
   const [zoom, setZoom] = useState(false);
 
   return (
@@ -59,6 +59,10 @@ export default function MasterCodeCard({ record, onOpen, onCopy, onDuplicate, on
               <Timer size={12} /> SAM {record.sam} min
             </span>
             <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
+              <button type="button" onClick={() => onEdit?.(record)} title="Editar código"
+                className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-900">
+                <Pencil size={14} />
+              </button>
               <button type="button" onClick={() => onDuplicate?.(record.code)} title="Duplicar código"
                 className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700">
                 <Plus size={14} />

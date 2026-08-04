@@ -58,6 +58,10 @@ export default function LoginPage() {
         navigate("/merchant-dashboard", { replace: true });
       } else if(roleNorm === "admin") {
         navigate("/admin-users", { replace: true });
+      }else if(roleNorm === "corte") {
+        navigate("/cutting", { replace: true });
+      }else if(roleNorm === "finishedwarehouse") {
+        navigate("/fws", { replace: true });
       }
       else {
         navigate("/", { replace: true });
