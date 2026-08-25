@@ -26,6 +26,7 @@ import {
   ChevronRight,
   Loader2,
   AlertCircle,
+  FileText,
 } from "lucide-react";
 import { format, isValid } from "date-fns";
 import { API_URL } from "../../lib/masterCodeCatalog";
@@ -53,6 +54,17 @@ const toGoalOf = (wo) => Math.max(targetOf(wo) - producedOf(wo), 0);
 
 const pctOf = (part, total) => (total > 0 ? Math.min((part / total) * 100, 100) : 0);
 const n = (v) => Math.round(Number(v) || 0).toLocaleString();
+
+// PO Cliente puede venir a nivel orden (wo.customer_po, ya deduplicado y unido
+// con comas en el backend) o solo en las líneas (lines[].customerPo). Se juntan
+// ambos, se deduplican, y se devuelve un solo texto para buscar, filtrar y
+// mostrar aunque el encabezado venga vacío.
+const poText = (wo) => {
+  const fromHeader = wo?.customer_po ? String(wo.customer_po).split(",") : [];
+  const fromLines = Array.isArray(wo?.lines) ? wo.lines.map((l) => l?.customerPo) : [];
+  const all = [...fromHeader, ...fromLines].map((s) => String(s ?? "").trim()).filter(Boolean);
+  return [...new Set(all)].join(", ");
+};
 
 // 'YYYY-MM-DD' se interpreta como UTC con new Date(), lo que en México adelanta
 // un día hacia atrás. Se arma la fecha en local para que la fecha compromiso
@@ -94,6 +106,7 @@ export default function OrderStatus() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [poTerm, setPoTerm] = useState("");
   const [filter, setFilter] = useState("all");
   const [lastUpdated, setLastUpdated] = useState(null);
 
@@ -209,15 +222,17 @@ export default function OrderStatus() {
 
   const filtered = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
+    const po = poTerm.trim().toLowerCase();
     return orders
       .filter((o) => (filter === "all" ? true : o.status === filter))
+      .filter((o) => (po ? poText(o).toLowerCase().includes(po) : true))
       .filter((o) => {
         if (!q) return true;
-        const hay = `${o.work_order_no} ${o.customer_name || ""} ${o.style_code || ""} ${o.estilo || ""} ${o.style_description || ""} ${o.color || ""}`.toLowerCase();
+        const hay = `${o.work_order_no} ${o.customer_name || ""} ${o.style_code || ""} ${o.estilo || ""} ${o.style_description || ""} ${o.color || ""} ${poText(o)}`.toLowerCase();
         return hay.includes(q);
       })
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  }, [orders, filter, searchTerm]);
+  }, [orders, filter, searchTerm, poTerm]);
 
   return (
     <div className="space-y-4">
@@ -264,16 +279,38 @@ export default function OrderStatus() {
         ))}
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Buscar por N° orden, cliente, estilo, color…"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
-        />
+      {/* Search + PO Cliente */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Buscar por N° orden, cliente, estilo, color…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
+          />
+        </div>
+        <div className="relative sm:w-64">
+          <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Filtrar por PO cliente…"
+            value={poTerm}
+            onChange={(e) => setPoTerm(e.target.value)}
+            className="w-full pl-10 pr-8 py-2 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
+          />
+          {poTerm && (
+            <button
+              type="button"
+              onClick={() => setPoTerm("")}
+              aria-label="Limpiar filtro de PO cliente"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 px-1 leading-none"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       {error && <div className="bg-red-50 text-red-700 p-3 rounded-xl text-sm">{error}</div>}
@@ -296,6 +333,7 @@ export default function OrderStatus() {
             const isOpen = expanded.has(o.id);
             const detail = breakdown[o.id] || {};
             const commitment = parseYMD(o.commitment_date);
+            const po = poText(o);
             const meta =
               STATUS_META[o.status] || {
                 label: o.status,
@@ -344,6 +382,15 @@ export default function OrderStatus() {
                       <span className={`text-[11px] rounded-full px-2 py-0.5 ${meta.pill}`}>
                         {meta.label}
                       </span>
+                      {po ? (
+                        <span
+                          title={`PO cliente: ${po}`}
+                          className="inline-flex items-center gap-1 text-[11px] rounded-full px-2 py-0.5 bg-indigo-50 text-indigo-700 font-medium max-w-[14rem] truncate"
+                        >
+                          <FileText className="w-3 h-3 shrink-0" />
+                          PO Cliente : {po}
+                        </span>
+                      ) : null}
                     </div>
                     <p className="text-xs text-gray-500 truncate">
                       {o.customer_name} · {o.style_code || o.estilo || "—"}
