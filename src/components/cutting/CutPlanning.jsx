@@ -1,22 +1,32 @@
-// components/cutting/CuttingEntry.jsx
+// components/cutting/CutPlanning.jsx
 //
-// Registrar corte por MARCADA (trazo). Cada marcada agrupa tallas, lleva su
-// N° de paneles (tendidos) y las piezas por panel de cada talla:
+// PANTALLA DEL PLANNER (planeación de marcadas).
+// ------------------------------------------------------------------------
+// El planner arma cada MARCADA (trazo): tela, longitud, y por cada talla los
+// paneles (tendidos) y las piezas por panel. Al terminar pulsa "Guardar corte",
+// que persiste las marcadas en la CORTE (cada marcada queda `saved`).
 //
-//     piezas de la talla = paneles × pzs/panel
-//     total de la marcada = paneles × (suma de pzs/panel)
+// Aquí NO se completan/verifican marcadas ni se imprimen tickets: eso vive en
+// CutVerification.jsx (supervisor de corte). Las marcadas ya verificadas
+// (`done`) se muestran BLOQUEADAS; para re-planearlas el supervisor debe
+// reabrirlas primero.
 //
-// Todo se consolida por talla contra el pedido para obtener el restante.
-// Guardar, completar y luego imprimir el ticket para las líneas.
+// Nota: este archivo es autónomo (trae sus propios helpers) para poder
+// entregarse como pieza suelta. Si más adelante quieren, todos los helpers
+// marcados abajo pueden moverse a un `lib/cutting/marcadas.js` compartido con
+// CutVerification.jsx y CuttingDashboard.jsx.
 //
 import { useState, useEffect, useMemo } from "react";
 import {
-  Search, RefreshCw, Camera, Calendar, CheckCircle, Printer,
-  Plus, Minus, Copy, Trash2, Layers, AlertTriangle, RotateCcw,
+  Search, RefreshCw, Camera, Calendar, CheckCircle,
+  Plus, Minus, Copy, Trash2, Layers, AlertTriangle, Lock,
 } from "lucide-react";
 import { API_URL } from "../../lib/masterCodeCatalog";
 import { colorForWO } from "../../lib/workOrderColors";
 
+/* ======================================================================== */
+/* Helpers compartibles (candidatos a lib/cutting/marcadas.js)              */
+/* ======================================================================== */
 const authHeaders = () => ({
   "Content-Type": "application/json",
   Authorization: `Bearer ${localStorage.getItem("token")}`,
@@ -24,11 +34,8 @@ const authHeaders = () => ({
 const num = (v) => Number(v) || 0;
 const uid = () => Math.random().toString(36).slice(2, 9);
 const rnd = (v) => Math.round(num(v)).toLocaleString();
-// Metros / rendimiento llevan decimales (longitud, consumo, m/pza).
 const rnd2 = (v) => num(v).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
-// Size-code → label. Built from the size run in use (see reference chart).
-// Swap for a catalog-driven source if master codes start carrying labels.
 const SIZE_LABELS = {
   "130": "XXXS", "132": "XXS", "134": "XS", "136": "S", "138": "M",
   "140": "L", "142": "XL", "144": "XXL",
@@ -46,7 +53,6 @@ const STATUS = {
   cancelled: { label: "Cancelada", pill: "bg-gray-100 text-gray-500" },
 };
 
-// Prioridad fijada por el planner. rank ordena de más a menos urgente.
 const PRIORITY = {
   urgent:       { label: "Urgente",    pill: "bg-red-100 text-red-700",       dot: "bg-red-500",    rank: 0, accent: "border-l-red-500" },
   intermediate: { label: "Intermedia", pill: "bg-yellow-100 text-yellow-700", dot: "bg-yellow-500", rank: 1, accent: "border-l-yellow-400" },
@@ -54,9 +60,6 @@ const PRIORITY = {
 };
 const priorityMeta = (p) => PRIORITY[p] || PRIORITY.normal;
 
-// Verificación de marcadas. Guardar el corte sólo cierra la PLANEACIÓN: la CORTE
-// no pasa a "Cortada" hasta que TODAS sus marcadas se verifican (se completan una
-// a una). Mientras falte alguna, la orden queda "Falta verificar N marcada(s)".
 const markerVerification = (markers) => {
   const list = Array.isArray(markers) ? markers : [];
   const total = list.length;
@@ -64,19 +67,10 @@ const markerVerification = (markers) => {
   return { total, verified, pending: Math.max(total - verified, 0) };
 };
 
-// Sub-estados de presentación derivados de la verificación de marcadas. No son
-// estados del backend: se calculan a partir de status real + marcadas.
 const PLANNED = { label: "Planeada", pill: "bg-blue-100 text-blue-700" };
 const VERIFYING = { label: "Verificando", pill: "bg-purple-100 text-purple-700" };
 const READY = { label: "Verificada", pill: "bg-green-100 text-green-700" };
 
-// Estado a mostrar en la lista/encabezado:
-//   completed  → Cortada
-//   cancelled  → Cancelada
-//   sin marcadas guardadas          → Pendiente
-//   marcadas guardadas, 0 verificadas (recién "Guardar corte") → Planeada
-//   algunas verificadas, faltan     → Verificando
-//   todas verificadas (aún no cerrada) → Verificada
 const displayStatusMeta = (status, markers) => {
   if (status === "completed") return STATUS.completed;
   if (status === "cancelled") return STATUS.cancelled;
@@ -94,14 +88,7 @@ const fmtDate = (v) => {
   return d ? `${d}/${m}/${y}` : String(s);
 };
 
-// Telas disponibles para la orden (vienen de las líneas de la OT, agregadas por
-// el backend en co.wo_fabrics), deduplicadas por nombre+código. El cortador
-// elige de aquí el código que está cortando. Fallback: el escalar guardado en
-// la CORTE (co.fabric / co.fabric_code) para órdenes antiguas.
 const orderFabrics = (co) => {
-  // 1º las telas propias del corte (co.fabrics, elegidas al crear la CORTE);
-  // 2º el agregado de las líneas de la OT (co.wo_fabrics) para cortes antiguos;
-  // 3º el escalar guardado (co.fabric / co.fabric_code).
   const raw = Array.isArray(co?.fabrics) && co.fabrics.length
     ? co.fabrics
     : Array.isArray(co?.wo_fabrics) ? co.wo_fabrics : [];
@@ -120,23 +107,14 @@ const orderFabrics = (co) => {
   if (!out.length) push(co?.fabric, co?.fabric_code);
   return out;
 };
-// Etiqueta legible de una tela: "CÓDIGO · Nombre".
-const fabricLabel = (f) => [f?.code, f?.name].filter(Boolean).join(" · ") || "—";
-// Clave única (nombre|código) para usar como value en los <select>: evita
-// colisiones cuando el código está vacío o se repite entre nombres distintos.
 const fkey = (f) => `${(f?.name ?? "").toString()}|${(f?.code ?? "").toString()}`;
-// Localiza la tela por código (usada al elegir el valor por defecto de la CORTE).
 const findFabric = (opts, code) => opts.find((o) => o.code === code) || null;
 
-// The size run of an order — the pedido each talla has to reach.
 const orderSizes = (co) =>
   Array.isArray(co?.sizes) && co.sizes.length
     ? co.sizes.map((s) => ({ talla: String(s.talla), quantity: num(s.quantity) }))
     : [{ talla: "—", quantity: num(co?.quantity) }];
 
-// Rehydrate saved marcadas into editable state, keeping the full size run visible.
-// Los paneles viven en cada talla. Las marcadas guardadas antes traían un solo
-// N° de paneles para todo el trazo: se copia a cada talla con piezas.
 const buildMarkers = (co) => {
   const saved = Array.isArray(co?.markers) ? co.markers : [];
   if (!saved.length) return [];
@@ -167,7 +145,7 @@ const buildMarkers = (co) => {
       yield: m.yield != null ? String(m.yield) : "",
       done: !!m.done,
       completedAt: m.completedAt || null,
-      saved: true,          // ya existe en la orden: puede completarse
+      saved: true,
       lines,
     };
   });
@@ -176,8 +154,6 @@ const buildMarkers = (co) => {
 const emptyMarker = (co, index, fabric = null) => ({
   id: uid(),
   name: `Marcada ${index + 1}`,
-  // Tela/código de ESTA marcada. Por defecto la tela activa; se puede cambiar
-  // por marcada, así una misma CORTE cubre varios códigos.
   fabricCode: fabric?.code ?? co?.fabric_code ?? "",
   fabricName: fabric?.name ?? co?.fabric ?? "",
   longitud: "",
@@ -188,28 +164,45 @@ const emptyMarker = (co, index, fabric = null) => ({
   lines: orderSizes(co).map((s) => ({ talla: s.talla, panels: "", perPanel: "" })),
 });
 
-// Cada talla del trazo lleva sus propios paneles: piezas = paneles × pzs/panel.
 const linePieces = (l) => num(l.panels) * num(l.perPanel);
 const markerLines = (m) => m.lines.filter((l) => num(l.panels) > 0 && num(l.perPanel) > 0);
 const markerPanels = (m) => markerLines(m).reduce((s, l) => s + num(l.panels), 0);
 const markerTotal = (m) => m.lines.reduce((s, l) => s + linePieces(l), 0);
-// Tolerancia de tela por panel (m), usada en el rendimiento.
 const TOLERANCE = 0.05;
-// Rendimiento (m/pza) = (longitud + tolerancia) ÷ N° de paneles de la marcada.
 const markerYield = (m) => {
   const panels = markerPanels(m);
   return panels > 0 ? (num(m.longitud) + TOLERANCE) / panels : 0;
 };
-// Consumo (m) = (longitud ÷ N° de paneles) × total de piezas de la marcada.
 const markerConsumo = (m) => {
   const panels = markerPanels(m);
   return panels > 0 ? (num(m.longitud) / panels) * markerTotal(m) : 0;
 };
-// Un ticket por panel de cada talla del trazo.
-const markerTickets = (m) =>
-  markerLines(m).reduce((s, l) => s + Math.max(0, Math.round(num(l.panels))), 0);
 
-export default function CuttingEntry() {
+const serializeMarkers = (list) =>
+  list.map((m) => ({
+    id: m.id,
+    name: m.name,
+    fabricCode: (m.fabricCode || "").toString().trim() || null,
+    fabricName: (m.fabricName || "").toString().trim() || null,
+    longitud: num(m.longitud),
+    yield: markerYield(m),
+    consumo: markerConsumo(m),
+    panels: markerPanels(m),
+    totalPieces: markerTotal(m),
+    done: !!m.done,
+    completedAt: m.completedAt || null,
+    lines: markerLines(m).map((l) => ({
+      talla: l.talla,
+      panels: num(l.panels),
+      perPanel: num(l.perPanel),
+      pieces: linePieces(l),
+    })),
+  }));
+
+/* ======================================================================== */
+/* Componente                                                               */
+/* ======================================================================== */
+export default function CutPlanning() {
   const [cutOrders, setCutOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -220,7 +213,6 @@ export default function CuttingEntry() {
   const [markers, setMarkers] = useState([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  // Tela activa: el código que hereda cada marcada nueva.
   const [activeFabric, setActiveFabric] = useState(null);
 
   useEffect(() => { fetchCutOrders(); }, []);
@@ -249,8 +241,6 @@ export default function CuttingEntry() {
         const hay = `${co.work_order_no} ${co.customer_po || ""} ${co.customer_name || ""} ${co.modelo_code || ""} ${co.style_code || ""} ${co.estilo || ""} ${co.color || ""} ${co.fabric || ""} ${priorityMeta(co.priority).label}`.toLowerCase();
         return hay.includes(q);
       })
-      // Prioridad primero (urgente → normal), luego fecha de corte más próxima,
-      // y como desempate la más reciente creada.
       .sort((a, b) => {
         const pr = priorityMeta(a.priority).rank - priorityMeta(b.priority).rank;
         if (pr !== 0) return pr;
@@ -265,8 +255,6 @@ export default function CuttingEntry() {
 
   const pickOrder = (co) => {
     const opts = orderFabrics(co);
-    // Código por defecto: el guardado en la CORTE si aparece en la lista; si no,
-    // la primera tela de la orden.
     const def = findFabric(opts, co.fabric_code) || opts[0] || null;
     const mk = buildMarkers(co);
     setSelected(co);
@@ -276,15 +264,12 @@ export default function CuttingEntry() {
     setError("");
   };
 
-  // Pedido por talla (base del consolidado).
   const pedido = useMemo(() => (selected ? orderSizes(selected) : []), [selected]);
-  // Telas de la orden entre las que el cortador elige.
   const fabricOptions = useMemo(() => (selected ? orderFabrics(selected) : []), [selected]);
 
   // ---- Marcadas -----------------------------------------------------------
   const addMarker = () => setMarkers((ms) => [...ms, emptyMarker(selected, ms.length, activeFabric)]);
 
-  // Cambiar la tela de una marcada (guarda código y nombre juntos).
   const setMarkerFabric = (id, key) =>
     setMarkers((ms) =>
       ms.map((m) => {
@@ -298,7 +283,7 @@ export default function CuttingEntry() {
     setMarkers((ms) => {
       const i = ms.findIndex((m) => m.id === id);
       if (i < 0) return ms;
-      const copy = { ...ms[i], id: uid(), name: `${ms[i].name} (copia)`, lines: ms[i].lines.map((l) => ({ ...l })) };
+      const copy = { ...ms[i], id: uid(), name: `${ms[i].name} (copia)`, done: false, completedAt: null, saved: false, lines: ms[i].lines.map((l) => ({ ...l })) };
       return [...ms.slice(0, i + 1), copy, ...ms.slice(i + 1)];
     });
 
@@ -330,9 +315,8 @@ export default function CuttingEntry() {
       )
     );
 
-  // Piezas cortadas por talla, sumadas sobre todas las marcadas.
   const cutByTalla = useMemo(() => {
-    const map = new Map(); // talla → { pieces, panels }
+    const map = new Map();
     markers.forEach((m) => {
       m.lines.forEach((l) => {
         const panels = num(l.panels);
@@ -348,7 +332,6 @@ export default function CuttingEntry() {
     return map;
   }, [markers]);
 
-  // Consolidado por talla: pedido vs cortado en todas las marcadas.
   const summary = useMemo(() => {
     const base = pedido.map((p) => ({ ...p }));
     const seen = new Set(base.map((b) => b.talla));
@@ -383,7 +366,6 @@ export default function CuttingEntry() {
     return t;
   }, [summary, markers]);
 
-  // Restante por talla, para mostrarlo dentro de cada marcada.
   const remainingByTalla = useMemo(
     () => new Map(summary.map((r) => [r.talla, r.remaining])),
     [summary]
@@ -393,45 +375,21 @@ export default function CuttingEntry() {
     [summary]
   );
 
-  // Estado de verificación de la CORTE seleccionada (marcadas en edición).
   const verification = useMemo(() => markerVerification(markers), [markers]);
 
-  // ---- Guardar ------------------------------------------------------------
-  const serializeMarkers = (list) =>
-    list.map((m) => ({
-      id: m.id,
-      name: m.name,
-      fabricCode: (m.fabricCode || "").toString().trim() || null,
-      fabricName: (m.fabricName || "").toString().trim() || null,
-      longitud: num(m.longitud),      // longitud del trazo (m)
-      yield: markerYield(m),          // = (longitud + 0.05) ÷ N° paneles
-      consumo: markerConsumo(m),      // = (longitud ÷ N° paneles) × total piezas
-      panels: markerPanels(m),        // suma de los paneles de sus tallas
-      totalPieces: markerTotal(m),
-      done: !!m.done,
-      completedAt: m.completedAt || null,
-      lines: markerLines(m).map((l) => ({
-        talla: l.talla,
-        panels: num(l.panels),
-        perPanel: num(l.perPanel),
-        pieces: linePieces(l),
-      })),
-    }));
-
+  // ---- Guardar (sólo planeación) -----------------------------------------
   const persist = async (list, okMessage) => {
     if (!selected) return;
     setSaving(true);
     setError("");
     setMessage("");
     try {
+      // Planear NO es cortar: aquí sólo se guardan las marcadas y sus paneles.
+      // Antes se mandaba también sizeProgress con amountCut = piezas planeadas,
+      // así que terminar el plan dejaba la orden con todo "cortado" y remaining
+      // en 0 — y el backend la cerraba sola. El avance real de corte lo escribe
+      // CutVerification conforme el supervisor va verificando cada marcada.
       const body = {
-        sizeProgress: summary.map((r) => ({
-          talla: r.talla,
-          quantity: r.quantity,
-          panels: r.panels,
-          amountCut: r.cut,
-          remaining: r.remaining,
-        })),
         markers: serializeMarkers(list),
         panels: list.reduce((s, m) => s + markerPanels(m), 0),
       };
@@ -463,283 +421,31 @@ export default function CuttingEntry() {
     if (totals.cut <= 0) {
       return setError("Ingrese los paneles y las piezas por panel de cada marcada");
     }
-    // Guardar = sólo se cierra la PLANEACIÓN. La CORTE queda pendiente de que se
-    // verifiquen sus marcadas; no se completa aquí.
     const v = markerVerification(markers);
     const msg =
-      v.pending > 0
-        ? `Planeación guardada · falta verificar ${v.pending} marcada${v.pending > 1 ? "s" : ""}`
-        : "Planeación guardada · verifique las marcadas para completar el corte";
+      v.total === 0
+        ? "Planeación guardada"
+        : v.pending > 0
+        ? `Planeación guardada · faltan ${v.pending} marcada${v.pending > 1 ? "s" : ""} por verificar (supervisor de corte)`
+        : "Planeación guardada · todas las marcadas ya están verificadas";
     persist(markers, msg);
   };
 
-  // Completar una marcada: se cierra para edición y habilita su impresión.
-  const completeMarker = async (id) => {
-    const m = markers.find((x) => x.id === id);
-    if (!m) return;
-    if (markerTotal(m) <= 0) {
-      return setError("Ingrese paneles y piezas por panel antes de completar la marcada");
-    }
-    const next = markers.map((x) =>
-      x.id === id ? { ...x, done: true, completedAt: new Date().toISOString() } : x
-    );
-    setMarkers(next);
-    const allDone = next.length > 0 && next.every((x) => x.done);
-    await persist(
-      next,
-      allDone
-        ? `${m.name} verificada — no falta ninguna marcada`
-        : `${m.name} verificada — ya puede imprimir sus tickets`
-    );
-    // Verificada la última marcada, la CORTE pasa automáticamente a "Cortada".
-    if (allDone && selected?.status !== "completed") {
-      await updateStatus("completed", "Todas las marcadas verificadas · corte completado");
-    }
-  };
-
-  const reopenMarker = async (id) => {
-    const next = markers.map((x) => (x.id === id ? { ...x, done: false, completedAt: null } : x));
-    setMarkers(next);
-    await persist(next, "Marcada reabierta");
-    // Reabrir invalida la verificación total: la CORTE vuelve a "En corte".
-    if (selected?.status === "completed") {
-      await updateStatus("in_progress", "Marcada reabierta · corte en proceso");
-    }
-  };
-
-  // Cambia el estado de la CORTE en el backend. Lo usa la verificación de
-  // marcadas: al verificar la última pasa a "completed"; al reabrir vuelve a
-  // "in_progress".
-  const updateStatus = async (status, okMsg) => {
-    if (!selected) return false;
-    setSaving(true);
-    setError("");
-    setMessage("");
-    try {
-      const res = await fetch(`${API_URL}/api/cut-orders/${selected.id}/status`, {
-        method: "PATCH",
-        headers: authHeaders(),
-        body: JSON.stringify({ status }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        if (okMsg) setMessage(okMsg);
-        await fetchCutOrders();
-        setSelected((s) => (s ? { ...s, status } : s));
-        return true;
-      }
-      setError(data.error || "No se pudo actualizar el estado");
-      return false;
-    } catch (err) {
-      setError(err.message);
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Botón manual de respaldo: sólo tiene sentido cuando ya no falta ninguna
-  // marcada por verificar (normalmente la última verificación ya lo hizo sola).
-  const handleComplete = () => {
-    const v = markerVerification(markers);
-    if (v.total === 0 || v.pending > 0) {
-      return setError(`Falta verificar ${v.pending || v.total} marcada${(v.pending || v.total) > 1 ? "s" : ""} antes de completar el corte`);
-    }
-    updateStatus("completed", "Corte completado");
-  };
-
-  // printTicket(co)            → todas las marcadas
-  // printTicket(co, marcada)   → sólo esa marcada
-  const printTicket = (co, onlyMarker = null) => {
-    if (onlyMarker && markerTickets(onlyMarker) <= 0) {
-      return setError("Esta marcada no tiene paneles ni piezas para imprimir");
-    }
-    const esc = (s) => String(s ?? "—").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-    const estilo = co.modelo_code || co.style_no || co.style_code || co.estilo || co.style_description || "—";
-
-    const pedidoMap = new Map(
-      (Array.isArray(co.sizes) ? co.sizes : []).map((s) => [String(s.talla), num(s.quantity)])
-    );
-
-    // Un ticket POR PANEL de cada talla dentro de la marcada.
-    const panelTickets = [];
-    const mk = onlyMarker
-      ? [{
-          name: onlyMarker.name,
-          fabricCode: onlyMarker.fabricCode,
-          fabricName: onlyMarker.fabricName,
-          lines: markerLines(onlyMarker).map((l) => ({
-            talla: l.talla, panels: num(l.panels), perPanel: num(l.perPanel),
-          })),
-        }].filter((m) => m.lines.length > 0)
-      : Array.isArray(co.markers) ? co.markers.filter((m) => Array.isArray(m.lines) && m.lines.length) : [];
-
-    if (mk.length) {
-      mk.forEach((m) => {
-        // Tela de la marcada; cae a la escalar de la CORTE para datos antiguos.
-        const mTela =
-          [m.fabricCode, m.fabricName].filter(Boolean).join(" ") ||
-          [co.fabric_code, co.fabric].filter(Boolean).join(" ") ||
-          "—";
-        m.lines.forEach((l) => {
-          const per = num(l.perPanel);
-          // Marcadas guardadas antes tenían los paneles a nivel del trazo.
-          const panels = Math.max(0, Math.round(l.panels != null ? num(l.panels) : num(m.panels)));
-          if (per <= 0) return;
-          const quantity = pedidoMap.get(String(l.talla)) ?? 0;
-          if (panels > 0) {
-            for (let i = 1; i <= panels; i++) {
-              panelTickets.push({ talla: l.talla, quantity, panelNo: i, panelCount: panels, pieces: per, marker: m.name, tela: mTela });
-            }
-          } else {
-            panelTickets.push({ talla: l.talla, quantity, panelNo: null, panelCount: null, pieces: per, marker: m.name, tela: mTela });
-          }
-        });
-      });
-    } else {
-      // Órdenes anteriores sin marcadas: progreso por talla → tallas → orden completa.
-      const prog = Array.isArray(co.size_progress) && co.size_progress.length
-        ? co.size_progress
-        : Array.isArray(co.sizes) && co.sizes.length
-        ? co.sizes.map((s) => ({ talla: s.talla, quantity: s.quantity, panels: null, perPanel: null, amountCut: null }))
-        : [{ talla: "—", quantity: co.quantity, panels: co.panels, perPanel: null, amountCut: co.amount_cut }];
-
-      prog.forEach((r) => {
-        const panels = Math.max(0, Math.round(num(r.panels)));
-        const perPanel = num(r.perPanel) > 0
-          ? num(r.perPanel)
-          : panels > 0 && r.amountCut != null
-          ? num(r.amountCut) / panels
-          : r.amountCut != null
-          ? num(r.amountCut)
-          : num(r.quantity);
-        if (panels > 0) {
-          for (let i = 1; i <= panels; i++) {
-            panelTickets.push({ talla: r.talla, quantity: r.quantity, panelNo: i, panelCount: panels, pieces: perPanel, marker: null });
-          }
-        } else {
-          panelTickets.push({ talla: r.talla, quantity: r.quantity, panelNo: null, panelCount: null, pieces: perPanel, marker: null });
-        }
-      });
-    }
-
-    const oneTicket = (t) => {
-      const panelTag = t.panelCount ? `P${t.panelNo}/${t.panelCount}` : "";
-      const panelNum = t.panelCount ? `${t.panelNo} / ${t.panelCount}` : "—";
-      const qrData = encodeURIComponent(`${cutNo(co)}|${co.work_order_no || ""}|${co.color || ""}|${t.talla || ""}|${t.marker || ""}|P${t.panelNo || 1}`);
-      const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&margin=0&data=${qrData}`;
-      const telaTxt = t.tela || [co.fabric_code, co.fabric].filter(Boolean).join(" ") || "—";
-      return `
-      <div class="ticket">
-        <div class="hdr">
-          <div class="who">
-            <div class="cust">${esc(co.customer_name)}</div>
-            <div class="meta">${esc(co.work_order_no)}</div>
-          </div>
-          <img class="qr" src="${qrSrc}" alt="" onerror="this.style.display='none'" />
-        </div>
-
-        <div class="po1"><span class="l">PO cliente</span><span class="v">${esc(co.customer_po || "—")}</span></div>
-
-        <div class="estilo"><span class="k">Estilo</span><span class="v">${esc(estilo)}</span></div>
-
-        <div class="talla">
-          <span class="tv">${esc(t.talla)}</span>
-          ${tallaLabel(t.talla) ? `<span class="sz">${esc(tallaLabel(t.talla))}</span>` : ""}
-        </div>
-
-        <div class="pieces"><span class="pk">Piezas · panel</span><span class="pv">${rnd(t.pieces)}</span></div>
-
-        <div class="grid">
-          <div class="c"><span class="l">Color</span><span class="v">${esc(co.color)}</span></div>
-          <div class="c"><span class="l">Season</span><span class="v">${esc(co.season || "—")}</span></div>
-          <div class="c stack">
-            <div><span class="l">Pedido talla</span><span class="v">${rnd(t.quantity)}</span></div>
-            <div><span class="l">Panel</span><span class="v">${esc(panelNum)}</span></div>
-          </div>
-          <div class="c"><span class="l">Marcada</span><span class="v">${esc(t.marker || "—")}</span></div>
-          <div class="c wide"><span class="l">Tela</span><span class="v">${esc(telaTxt)}</span></div>
-        </div>
-
-        <div class="code">${esc(cutNo(co))} · T${esc(t.talla)}${panelTag ? ` · ${esc(panelTag)}` : ""}</div>
-        <div class="foot"><span>${esc(fmtDate(co.cut_date))}</span><span>LineOps</span></div>
-      </div>`;
-    };
-
-    const tickets = panelTickets.map(oneTicket).join("");
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(cutNo(co))}</title>
-      <style>
-        :root { --ink:#000; --muted:#333; --line:#000; }
-        * { box-sizing:border-box; margin:0; padding:0; }
-        html,body { background:#e5e7eb; }
-        body { font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:var(--ink); padding:8mm 0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-
-        /* Etiqueta térmica de 40 mm × 80 mm */
-        .ticket {
-          width:40mm; height:80mm; padding:1.6mm 2mm; margin:0 auto 8mm;
-          background:#fff; overflow:hidden; position:relative;
-          display:flex; flex-direction:column; gap:1mm;
-        }
-
-        .hdr { display:flex; justify-content:space-between; align-items:flex-start; gap:1mm; }
-        .who { flex:1; min-width:0; }
-        .cust { font-size:8pt; font-weight:800; line-height:1.05; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .meta { font-family:ui-monospace,Consolas,monospace; font-size:6pt; color:var(--muted); line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .qr { width:13mm; height:13mm; flex:none; }
-
-        .estilo { display:flex; align-items:baseline; gap:1.5mm; border-top:0.3mm solid var(--line); padding-top:0.8mm; }
-        .estilo .k { font-size:6pt; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); flex:none; }
-        .estilo .v { font-size:12pt; font-weight:800; line-height:1.05; word-break:break-all; }
-
-        .talla { display:flex; align-items:center; gap:1.8mm; }
-        .talla .tv { font-size:13pt; font-weight:700; line-height:1; }
-        .talla .sz { font-size:22pt; font-weight:800; line-height:1; border:0.4mm solid var(--line); border-radius:1.2mm; padding:0.2mm 2mm; }
-
-        .pieces { display:flex; align-items:baseline; justify-content:space-between; gap:1mm; border:0.5mm solid var(--line); border-radius:1mm; padding:0.8mm 2mm; }
-        .pieces .pk { font-size:6.5pt; text-transform:uppercase; letter-spacing:.05em; }
-        .pieces .pv { font-size:19pt; font-weight:800; line-height:1; }
-
-        .po1 { display:flex; align-items:baseline; gap:1.5mm; border-top:0.3mm solid var(--line); padding-top:0.8mm; }
-        .po1 .l { font-size:6pt; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); flex:none; }
-        .po1 .v { font-size:15pt; font-weight:800; line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-
-        .grid { display:grid; grid-template-columns:1fr 1fr; gap:0.8mm 2mm; }
-        .grid .c { min-width:0; display:flex; flex-direction:column; line-height:1.1; }
-        .grid .l { font-size:5.5pt; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
-        .grid .c .v { font-size:8pt; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .grid .stack { gap:0.8mm; }
-        .grid .stack > div { display:flex; flex-direction:column; line-height:1.1; }
-        .grid .wide { grid-column:1 / -1; }
-        .grid .wide .v { white-space:normal; overflow:visible; word-break:break-word; }
-
-        .code { margin-top:auto; text-align:center; font-family:ui-monospace,Consolas,monospace; font-size:6.5pt; letter-spacing:.04em; border-top:0.3mm solid var(--line); padding-top:0.6mm; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .foot { display:flex; justify-content:space-between; font-size:5.5pt; color:var(--muted); }
-
-        @page { size:40mm 80mm; margin:0; }
-        @media print {
-          html,body { background:#fff; }
-          body { padding:0; }
-          .ticket { margin:0; page-break-after:always; break-after:page; }
-          .ticket:last-child { page-break-after:auto; break-after:auto; }
-        }
-      </style></head>
-      <body>
-        ${tickets}
-        <script>window.onload=function(){window.print();}</script>
-      </body></html>`;
-    const w = window.open("", "_blank", "width=520,height=860");
-    if (!w) { setError("Permita ventanas emergentes para imprimir."); return; }
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-  };
+  const lockedCount = markers.filter((m) => m.done).length;
 
   return (
     <div className="space-y-6">
-      {/* Top: pick a cut order */}
+      {/* Cabecera de la pantalla */}
+      <div className="flex items-center gap-2">
+        <Layers className="w-5 h-5 text-gray-400" />
+        <h1 className="text-lg font-bold text-gray-900">Planeación de marcadas</h1>
+        <span className="text-xs text-gray-500">Arme las marcadas y guarde el corte. La verificación e impresión las hace el supervisor de corte.</span>
+      </div>
+
+      {/* Selector de orden */}
       <div className="space-y-3">
         <div className="flex flex-wrap gap-2">
-          {[{ id: "open", label: "Por cortar" }, { id: "completed", label: "Cortadas" }, { id: "all", label: "Todas" }].map((f) => (
+          {[{ id: "open", label: "Por planear" }, { id: "completed", label: "Cortadas" }, { id: "all", label: "Todas" }].map((f) => (
             <button
               key={f.id}
               onClick={() => setFilter(f.id)}
@@ -805,11 +511,11 @@ export default function CuttingEntry() {
         </div>
       </div>
 
-      {/* Below: entry (full width) */}
+      {/* Editor de planeación */}
       <div>
         {!selected ? (
           <div className="rounded-2xl border bg-white shadow-sm p-8 text-center text-gray-500">
-            Elija una orden de corte para registrar el corte.
+            Elija una orden de corte para planear sus marcadas.
           </div>
         ) : (
           <div className="rounded-2xl border bg-white shadow-sm">
@@ -855,7 +561,7 @@ export default function CuttingEntry() {
                       ))}
                     </select>
                     <span className="block text-[10px] text-gray-400 mt-1">
-                      {fabricOptions.length} telas · elija la que va a cortar
+                      {fabricOptions.length} telas · elija la que va a planear
                     </span>
                   </>
                 ) : (
@@ -866,22 +572,21 @@ export default function CuttingEntry() {
               </div>
               <Info label="Tela" value={activeFabric?.name || selected.fabric} />
               <Info label="A cortar" value={`${rnd(selected.quantity)} pzas`} />
-              <Info label="Rendimiento" value={selected.yield_per_piece != null ? `${num(selected.yield_per_piece)} m/pza` : "—"} />
               <Info label="Fecha" value={fmtDate(selected.cut_date)} icon={Calendar} />
             </div>
 
             <div className="p-5 space-y-5">
-              {/* Avance global */}
+              {/* Avance global (planeado) */}
               <div className="rounded-2xl border border-gray-200 bg-gray-50/60 p-4">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
-                    <div className="text-[11px] uppercase tracking-wide text-gray-500">Cortado</div>
+                    <div className="text-[11px] uppercase tracking-wide text-gray-500">Planeado</div>
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-2xl font-bold text-blue-700">{rnd(totals.cut)}</span>
                       <span className="text-sm text-gray-500">/ {rnd(totals.quantity)} pzas</span>
                     </div>
                   </div>
-                  <Metric label="Marcadas" value={`${markers.filter((m) => m.done).length}/${markers.length}`} />
+                  <Metric label="Marcadas" value={`${verification.verified}/${verification.total}`} />
                   <Metric label="Paneles" value={rnd(totals.panels)} />
                   <Metric label="Consumo (m)" value={rnd2(totals.consumo)} tone="text-blue-700" />
                   <Metric
@@ -900,6 +605,13 @@ export default function CuttingEntry() {
                 )}
               </div>
 
+              {lockedCount > 0 && (
+                <div className="flex items-center gap-2 text-xs text-gray-500 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                  {lockedCount} marcada{lockedCount > 1 ? "s" : ""} ya verificada{lockedCount > 1 ? "s" : ""} — bloqueada{lockedCount > 1 ? "s" : ""}. El supervisor de corte debe reabrirla{lockedCount > 1 ? "s" : ""} para re-planear.
+                </div>
+              )}
+
               {/* Marcadas */}
               <div className="flex items-center justify-between">
                 <div>
@@ -915,7 +627,7 @@ export default function CuttingEntry() {
 
               {markers.length === 0 ? (
                 <button onClick={addMarker} className="w-full rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500 hover:border-gray-400 hover:bg-gray-50">
-                  Añada la primera marcada para empezar a capturar.
+                  Añada la primera marcada para empezar a planear.
                 </button>
               ) : (
                 <div className="space-y-4">
@@ -925,10 +637,7 @@ export default function CuttingEntry() {
                     const consumo = markerConsumo(m);
                     const yieldVal = markerYield(m);
                     const used = markerLines(m).length;
-                    const tickets = markerTickets(m);
-                    const locked = !!m.done;
-                    // Tela de esta marcada + su lista de opciones (incluye la
-                    // guardada aunque ya no esté entre las telas de la orden).
+                    const locked = !!m.done; // ya verificada por el supervisor → solo lectura
                     const mCur = { name: m.fabricName || "", code: m.fabricCode || "" };
                     const mHasOpt = fabricOptions.some((o) => fkey(o) === fkey(mCur));
                     const mOpts = mHasOpt ? fabricOptions : [mCur, ...fabricOptions];
@@ -947,7 +656,6 @@ export default function CuttingEntry() {
                             className="w-40 sm:w-56 rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm font-semibold text-gray-900 hover:border-gray-200 focus:border-gray-200 focus:bg-white outline-none focus:ring-2 focus:ring-gray-900/10 disabled:hover:border-transparent"
                           />
 
-                          {/* Tela/código de la marcada */}
                           {fabricOptions.length > 1 ? (
                             <label className="flex items-center gap-1.5">
                               <span className="text-[10px] uppercase tracking-wide text-gray-400">Tela</span>
@@ -976,7 +684,11 @@ export default function CuttingEntry() {
                               <div className="text-base font-bold text-blue-700">{rnd(tot)} <span className="text-xs font-medium text-gray-400">pzas</span></div>
                               <div className="text-[11px] text-gray-500">{rnd(panels)} panel(es) · {used} talla(s)</div>
                             </div>
-                            {!locked && (
+                            {locked ? (
+                              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-green-700">
+                                <Lock className="w-3.5 h-3.5" /> Verificada
+                              </span>
+                            ) : (
                               <>
                                 <button onClick={() => duplicateMarker(m.id)} title="Duplicar marcada" className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-white">
                                   <Copy className="w-4 h-4" />
@@ -989,7 +701,7 @@ export default function CuttingEntry() {
                           </div>
                         </div>
 
-                        {/* Longitud · Rendimiento · Consumo de la marcada */}
+                        {/* Longitud · Rendimiento · Consumo */}
                         <div className={`px-3 py-2.5 border-b grid grid-cols-3 gap-2 ${locked ? "bg-green-50/40" : "bg-white"}`}>
                           <label className="block">
                             <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Longitud (m)</span>
@@ -1111,45 +823,11 @@ export default function CuttingEntry() {
                           })}
                         </div>
 
-                        {/* Acciones de la marcada */}
-                        <div className={`px-3 py-2.5 border-t flex flex-wrap items-center gap-2 ${locked ? "bg-green-50/60" : "bg-white"}`}>
-                          {locked ? (
-                            <>
-                              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-green-700">
-                                <CheckCircle className="w-4 h-4" /> Marcada completada
-                              </span>
-                              <button
-                                onClick={() => reopenMarker(m.id)}
-                                disabled={saving}
-                                className="ml-auto inline-flex items-center gap-1.5 text-sm rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                              >
-                                <RotateCcw className="w-4 h-4" /> Reabrir
-                              </button>
-                              <button
-                                onClick={() => printTicket(selected, m)}
-                                className="inline-flex items-center gap-1.5 text-sm rounded-lg bg-gray-900 px-3 py-2 font-medium text-white hover:bg-gray-800"
-                              >
-                                <Printer className="w-4 h-4" /> Imprimir {tickets} ticket(s)
-                              </button>
-                            </>
-                          ) : !m.saved ? (
-                            <span className="text-xs text-gray-400">
-                              Guarde el corte para poder completar e imprimir esta marcada.
-                            </span>
-                          ) : (
-                            <>
-                              <span className="text-xs text-gray-400">
-                                {tickets > 0 ? `Al completar se imprimen ${tickets} ticket(s)` : "Falta capturar paneles y piezas"}
-                              </span>
-                              <button
-                                onClick={() => completeMarker(m.id)}
-                                disabled={saving || tot <= 0}
-                                className="ml-auto inline-flex items-center gap-1.5 text-sm rounded-lg bg-green-600 px-3 py-2 font-medium text-white hover:bg-green-700 disabled:opacity-50"
-                              >
-                                <CheckCircle className="w-4 h-4" /> Completar marcada
-                              </button>
-                            </>
-                          )}
+                        {/* Pie de la marcada (sólo informativo en planeación) */}
+                        <div className={`px-3 py-2.5 border-t text-xs ${locked ? "bg-green-50/60 text-green-700" : "bg-white text-gray-400"}`}>
+                          {locked
+                            ? "Marcada verificada por el supervisor de corte — bloqueada aquí."
+                            : "Se verifica e imprime desde la pantalla de verificación (supervisor de corte)."}
                         </div>
                       </div>
                     );
@@ -1167,7 +845,7 @@ export default function CuttingEntry() {
                         <th className="text-left font-medium px-3 py-2">Talla</th>
                         <th className="text-right font-medium px-2 py-2">Pedido</th>
                         <th className="text-right font-medium px-2 py-2">Paneles</th>
-                        <th className="text-right font-medium px-2 py-2">Cortado</th>
+                        <th className="text-right font-medium px-2 py-2">Planeado</th>
                         <th className="px-2 py-2 w-32">Avance</th>
                         <th className="text-right font-medium px-3 py-2">Restante</th>
                       </tr>
@@ -1209,28 +887,14 @@ export default function CuttingEntry() {
               {error && <div className="bg-red-50 text-red-700 p-3 rounded-xl text-sm">{error}</div>}
               {message && <div className="bg-green-50 text-green-700 p-3 rounded-xl text-sm flex items-center gap-2"><CheckCircle className="w-4 h-4" /> {message}</div>}
 
-              {/* Acciones */}
-              <div className="sticky bottom-0 -mx-5 px-5 pt-3 pb-4 bg-white/95 backdrop-blur border-t flex flex-col sm:flex-row gap-2">
-                <button onClick={handleSave} disabled={saving} className="flex-1 rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50">
-                  {saving ? "Guardando…" : `Guardar corte · ${rnd(totals.cut)} pzas`}
+              {/* Acción única: guardar planeación */}
+              <div className="sticky bottom-0 -mx-5 px-5 pt-3 pb-4 bg-white/95 backdrop-blur border-t">
+                <button onClick={handleSave} disabled={saving} className="w-full rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50">
+                  {saving ? "Guardando…" : `Guardar corte · ${rnd(totals.cut)} pzas planeadas`}
                 </button>
-                {selected.status === "completed" ? (
-                  <button onClick={() => printTicket(selected)} className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-800 hover:bg-gray-50">
-                    <Printer className="w-4 h-4" /> Imprimir todas las marcadas
-                  </button>
-                ) : verification.total === 0 ? (
-                  <div className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-400">
-                    Añada y verifique las marcadas
-                  </div>
-                ) : verification.pending > 0 ? (
-                  <div className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
-                    <AlertTriangle className="w-4 h-4" /> Falta verificar {verification.pending} marcada{verification.pending > 1 ? "s" : ""}
-                  </div>
-                ) : (
-                  <button onClick={handleComplete} disabled={saving} className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-3 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50">
-                    <CheckCircle className="w-4 h-4" /> Completar corte
-                  </button>
-                )}
+                <p className="mt-2 text-center text-[11px] text-gray-400">
+                  La verificación de marcadas y la impresión de tickets se hacen en la pantalla del supervisor de corte.
+                </p>
               </div>
             </div>
           </div>
@@ -1240,8 +904,9 @@ export default function CuttingEntry() {
   );
 }
 
-// Píldora de verificación de marcadas: "Falta verificar N marcada(s)" mientras
-// alguna quede sin completar; "Marcadas verificadas" cuando ya no falta ninguna.
+/* ======================================================================== */
+/* UI atoms (compartibles con CutVerification.jsx)                          */
+/* ======================================================================== */
 function VerifyPill({ markers, status }) {
   const { total, verified, pending } = markerVerification(markers);
   if (total === 0) return null;

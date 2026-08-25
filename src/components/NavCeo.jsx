@@ -7,10 +7,13 @@ export default function NavCeo() {
   const navigate = useNavigate();
 
   const menu = [
-    { name: "Dashboard", path: "/overview" },
+    { name: "Production Monitor", path: "/overview" },
     { name: "Actual Efficiency", path: "/actual-efficiency" },
     { name: "Quality Monitor", path: "/quality-monitor" },
     { name: "Mechanics", path: "/mecanics" },
+    { name: "Merchant Analytics", path: "/merchant-analytics" },
+    { name: "Cut-Analytics", path: "/cut-order-analytics" },
+    { name: "FWH-Analytics", path: "/fwh-analytics" },
   ];
 
   const handleLogout = () => {
