@@ -60,6 +60,12 @@ const MIN_ROWS = 10;      // keep the empty grid looking full
 // rose = over-cap / remove, emerald = saved, amber = near cap).
 const PREORDER_ACCENT = "#7c3aed";   // violet-600
 const PREORDER_SOFT   = "#ede9fe";   // violet-100
+<<<<<<< HEAD
+=======
+// Pre-order PARCIAL accent: una PRE convertida en parte (ya salió al menos una PO
+// de cliente, faltan las demás). Ámbar oscuro para distinguirla de la PRE llena.
+const PARTIAL_ACCENT  = "#d97706";   // amber-600
+>>>>>>> fb9041d (supermarket, line leader, engineer)
 
 // Color is keyed on the STYLE CODE (tipo·modelo·correlativo — e.g. "DAMBOD08"),
 // so every job that shares a style code shares one color, and distinct style
@@ -265,13 +271,25 @@ function buildPreJobs(preOrders, eq) {
     // ficha lo dice en vez de fingir un número.
     const sam = num(p.sam_minutes);
     const eqPerPiece = sam / factor;
+<<<<<<< HEAD
     const cantidad = num(p.pieces);
+=======
+    // Conversión incremental: la ficha muestra lo que FALTA por convertir, no el
+    // total original. remaining_pieces = pieces - converted_pieces (lo calcula el
+    // backend); si un backend viejo no lo manda, cae a pieces.
+    const cantidad = num(p.remaining_pieces != null ? p.remaining_pieces : p.pieces);
+    const isPartial = p.status === "partially_converted";
+>>>>>>> fb9041d (supermarket, line leader, engineer)
     const date = p.target_date || null;
     return {
       key: preJobKey(p.id),
       preOrderId: p.id,
       workOrderId: null,
       isPreOrderRow: true,
+<<<<<<< HEAD
+=======
+      isPartial,
+>>>>>>> fb9041d (supermarket, line leader, engineer)
       work_order_no: p.pre_order_no,
       customer_name: p.customer_name || "—",
       customer_po: p.customer_po || "",
@@ -486,10 +504,27 @@ export default function MerchantPlanner({
   // tablero sigue funcionando sin ellas.
   const fetchPreOrders = async () => {
     try {
+<<<<<<< HEAD
       const res = await fetch(`${API_URL}/api/pre-orders?status=pending`, { headers: authHeaders() });
       if (!res.ok) return;
       const data = await res.json();
       const rows = Array.isArray(data.preOrders) ? data.preOrders : [];
+=======
+      // Se traen las PENDIENTES y las PARCIALES: una pre-orden parcialmente
+      // convertida sigue en el tablero con su resto de piezas hasta que se
+      // convierta del todo. Sin este segundo estado, su ficha desaparecería (y
+      // la limpieza de caché de abajo borraría su celda).
+      const [pRes, pcRes] = await Promise.all([
+        fetch(`${API_URL}/api/pre-orders?status=pending`, { headers: authHeaders() }),
+        fetch(`${API_URL}/api/pre-orders?status=partially_converted`, { headers: authHeaders() }),
+      ]);
+      if (!pRes.ok && !pcRes.ok) return;
+      const collected = [];
+      if (pRes.ok)  { const d = await pRes.json();  if (Array.isArray(d.preOrders)) collected.push(...d.preOrders); }
+      if (pcRes.ok) { const d = await pcRes.json(); if (Array.isArray(d.preOrders)) collected.push(...d.preOrders); }
+      // Guarda por si un backend viejo ignora el status y devuelve todo.
+      const rows = collected.filter((r) => r.status === "pending" || r.status === "partially_converted");
+>>>>>>> fb9041d (supermarket, line leader, engineer)
       setPreOrderRows(rows);
       // Limpia del caché local las fichas PRE que ya no están pendientes
       // (convertidas o canceladas). Sin esto, una pre-orden convertida dejaría
@@ -1100,16 +1135,26 @@ function WeekGrid({ periods, board, active, dragKey, armed, dropTarget, setDropT
                           if (Date.now() - draggedAtRef.current < 300) return;
                           if (isArmed) { onArmJob(null); onOpenJob(j); } else onArmJob(j.key);
                         }}
+<<<<<<< HEAD
                         title={`${j.work_order_no}${j.color ? " · " + j.color : ""}${isPre ? " · PRE-ORDEN" : ""} · ${j.estilo || ""}${j.deliveryDate ? " · Entrega " + fmtDate(j.deliveryDate) : ""} · ${fmtInt(j.eqPieces)} pzas eq — arrástrala a otra semana, o tócala y luego toca la semana destino`}
                         style={{ height: CELL_H, backgroundColor: c.solidBg, color: c.onSolid,
                           ...(isPre ? { border: `2px dashed ${PREORDER_ACCENT}`, boxShadow: `0 0 0 2px ${PREORDER_SOFT}` } : {}) }}
+=======
+                        title={`${j.work_order_no}${j.color ? " · " + j.color : ""}${isPre ? (j.isPartial ? " · PRE-ORDEN PARCIAL" : " · PRE-ORDEN") : ""} · ${j.estilo || ""}${j.deliveryDate ? " · Entrega " + fmtDate(j.deliveryDate) : ""} · ${fmtInt(j.eqPieces)} pzas eq — arrástrala a otra semana, o tócala y luego toca la semana destino`}
+                        style={{ height: CELL_H, backgroundColor: c.solidBg, color: c.onSolid,
+                          ...(isPre ? { border: `2px dashed ${j.isPartial ? PARTIAL_ACCENT : PREORDER_ACCENT}`, boxShadow: `0 0 0 2px ${PREORDER_SOFT}` } : {}) }}
+>>>>>>> fb9041d (supermarket, line leader, engineer)
                         className={`relative rounded-lg flex flex-col items-center justify-center shadow-sm hover:shadow transition leading-none px-1
                           ${selectMode ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}
                           ${isDragging ? "opacity-40" : ""}
                           ${isSelected ? "ring-2 ring-offset-1 ring-violet-500 shadow-md" : isArmed ? "ring-2 ring-offset-1 ring-slate-900 shadow-md" : ""}`}>
                         {isPre && (
                           <span className="absolute top-0.5 left-0.5 text-[7px] font-bold leading-none px-1 py-[1px] rounded-full shadow-sm"
+<<<<<<< HEAD
                             style={{ backgroundColor: PREORDER_ACCENT, color: "#fff" }}>PRE</span>
+=======
+                            style={{ backgroundColor: j.isPartial ? PARTIAL_ACCENT : PREORDER_ACCENT, color: "#fff" }}>{j.isPartial ? "PARC" : "PRE"}</span>
+>>>>>>> fb9041d (supermarket, line leader, engineer)
                         )}
                         {selectMode && (
                           <span className="absolute top-0.5 right-0.5">
@@ -1191,7 +1236,11 @@ function JobCard({ j, armed, onTap, onDragStart, onDragEnd, isPre, selectMode, s
       onDragEnd={onDragEnd}
       onClick={() => (selectMode ? onToggleSelect?.() : onTap?.())}
       title={selectMode ? "Toca para seleccionar / deseleccionar" : "Arrástrala a una semana, o tócala y luego toca una celda"}
+<<<<<<< HEAD
       style={isPre ? { border: `2px dashed ${PREORDER_ACCENT}`, boxShadow: `0 0 0 2px ${PREORDER_SOFT}` } : undefined}
+=======
+      style={isPre ? { border: `2px dashed ${j.isPartial ? PARTIAL_ACCENT : PREORDER_ACCENT}`, boxShadow: `0 0 0 2px ${PREORDER_SOFT}` } : undefined}
+>>>>>>> fb9041d (supermarket, line leader, engineer)
       className={`relative shrink-0 w-60 rounded-xl border bg-white px-2.5 py-2 shadow-sm hover:shadow transition group
         ${selectMode ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}
         ${selected ? "ring-2 ring-violet-500 border-transparent" : armed ? "ring-2 ring-slate-900 border-transparent" : isPre ? "border-transparent" : "border-slate-200"}`}>
@@ -1204,13 +1253,26 @@ function JobCard({ j, armed, onTap, onDragStart, onDragEnd, isPre, selectMode, s
         {isPre && (
           <span className="text-[8px] font-bold leading-none px-1.5 py-0.5 rounded-full" style={{ backgroundColor: PREORDER_ACCENT, color: "#fff" }}>PRE</span>
         )}
+<<<<<<< HEAD
+=======
+        {j.isPartial && (
+          <span className="text-[8px] font-bold leading-none px-1.5 py-0.5 rounded-full" style={{ backgroundColor: PARTIAL_ACCENT, color: "#fff" }}>PARCIAL</span>
+        )}
+>>>>>>> fb9041d (supermarket, line leader, engineer)
         {j.color && <span className="ml-auto text-[10px] rounded-full bg-slate-100 text-slate-700 px-1.5 py-0.5 font-mono">{j.color}</span>}
       </div>
       <p className="text-[11px] text-slate-500 truncate mt-0.5">{j.customer_name}{j.customer_po ? ` · ${j.customer_po}` : ""}</p>
       {j.isPreOrderRow && (
         <div className="mt-0.5 flex items-center gap-1.5">
+<<<<<<< HEAD
           <p className="text-[10px] truncate" style={{ color: PREORDER_ACCENT }}>
             Pre-orden · faltan tallas, colores y SAM
+=======
+          <p className="text-[10px] truncate" style={{ color: j.isPartial ? PARTIAL_ACCENT : PREORDER_ACCENT }}>
+            {j.isPartial
+              ? `Parcial · restan ${Number(j.cantidad || 0).toLocaleString()} pzs por convertir`
+              : "Pre-orden · faltan tallas, colores y SAM"}
+>>>>>>> fb9041d (supermarket, line leader, engineer)
           </p>
           {onConvert && !selectMode && (
             <button type="button"
@@ -1301,6 +1363,10 @@ function JobDetailModal({ job, assignedWeek, weeks, onMove, onClose, onRemove, i
             <h3 className="font-mono font-bold text-slate-900 truncate flex items-center gap-1.5">
               {job.work_order_no}{job.color ? ` · ${job.color}` : ""}
               {isPre && <span className="text-[9px] font-sans font-bold leading-none px-1.5 py-0.5 rounded-full" style={{ backgroundColor: PREORDER_ACCENT, color: "#fff" }}>PRE-ORDEN</span>}
+<<<<<<< HEAD
+=======
+              {job.isPartial && <span className="text-[9px] font-sans font-bold leading-none px-1.5 py-0.5 rounded-full" style={{ backgroundColor: PARTIAL_ACCENT, color: "#fff" }}>PARCIAL</span>}
+>>>>>>> fb9041d (supermarket, line leader, engineer)
             </h3>
             <p className="text-xs text-slate-500 truncate">{job.style_description || job.style_code}</p>
           </div>
@@ -1445,6 +1511,10 @@ function PlannerTable({ jobs, weeks, currentDate, assignments, onAssign, onUnass
                   <span className="inline-flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.dotBg }} />{j.work_order_no}
                     {isPre && <span className="text-[8px] font-sans font-bold leading-none px-1.5 py-0.5 rounded-full" style={{ backgroundColor: PREORDER_ACCENT, color: "#fff" }}>PRE</span>}
+<<<<<<< HEAD
+=======
+                    {j.isPartial && <span className="text-[8px] font-sans font-bold leading-none px-1.5 py-0.5 rounded-full" style={{ backgroundColor: PARTIAL_ACCENT, color: "#fff" }}>PARCIAL</span>}
+>>>>>>> fb9041d (supermarket, line leader, engineer)
                   </span>
                 </td>
                 <td className="px-4 py-2 whitespace-nowrap text-slate-600">{j.customer_name}</td>

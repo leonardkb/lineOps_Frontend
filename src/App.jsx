@@ -27,6 +27,10 @@ import FinishedWarehouseAnalytics from "./pages/FWHS/FinishedWarehouseAnalytics"
 import PreOrdenesPage from "./components/merchant/PreOrdenesPage";
 import PreOrdenWizard from "./components/merchant/PreOrdenWizard";
 
+import SupermarketPage from "./pages/supermarket/SupermarketPage";
+import PlannerAnalytics from "./components/planner/PlannerAnalytics";
+import VerificadorPage from "./pages/Verificadorpage";
+
 export default function App() {
   return (
     <Router>
@@ -58,6 +62,11 @@ export default function App() {
         <Route path="/fwh-analytics" element={<FinishedWarehouseAnalytics />} /> {/*fwh analytics route */}
         <Route path='/pre-ordenes' element={<PreOrdenesPage/>} /> {/*pre-orders route */}
         <Route path='/pre-orden-wizard' element ={<PreOrdenWizard/>}/>
+
+        <Route path='/supermarket-plan' element={<SupermarketPage/>} /> {/*supermarket plan route */}
+        <Route path='/planner-analytics' element={<PlannerAnalytics/>} /> {/*planner analytics route */}
+        <Route path='/verificador' element={<VerificadorPage/>} /> {/*verificador route */}
+
       </Routes>
     </Router>
   );

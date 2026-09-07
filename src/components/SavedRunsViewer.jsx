@@ -23,6 +23,16 @@ const normalizeDate = (dateStr) => {
   return dateStr;
 };
 
+// A run is unique per (line_no, run_date, style, color). `style` stays the plain
+// estilo (e.g. "DAMBOD01") and `color` is stored as its own field (e.g. "BLA"),
+// so two colors of the same style can coexist as separate runs. This helper only
+// builds a DISPLAY label; it never changes what gets stored.
+const styleWithColor = (style, color) => {
+  const s = String(style || "").trim();
+  const c = String(color || "").trim();
+  return c ? `${s} (${c})` : s;
+};
+
 export default function SavedRunsViewer({ onBack }) {
   const [lineRuns, setLineRuns] = useState([]);
   const [selectedRun, setSelectedRun] = useState(null);
@@ -135,34 +145,51 @@ const handleDeleteRun = async () => {
   setIsDeleting(true);
   setMessage("");
 
+  // Una tarjeta agrupada representa varias corridas (una por color). Al
+  // eliminarla se borran todas las corridas del grupo; para una tarjeta
+  // normal, _groupIds no existe y sólo se borra su propio id.
+  const idsToDelete =
+    runToDelete._groupIds && runToDelete._groupIds.length
+      ? runToDelete._groupIds
+      : [runToDelete.id];
+
   try {
     const token = localStorage.getItem("token");
-    const response = await fetch(`/api/run/${runToDelete.id}`, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const failed = [];
 
-    const data = await response.json();
+    for (const id of idsToDelete) {
+      try {
+        const response = await fetch(`/api/run/${id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        if (!data.success) failed.push({ id, error: data.error });
+      } catch (err) {
+        failed.push({ id, error: err.message });
+      }
+    }
 
-    if (data.success) {
-      setMessage(`✅ ${data.message}`);
+    const deletedCount = idsToDelete.length - failed.length;
+    if (failed.length === 0) {
+      setMessage(`✅ ${deletedCount} corrida(s) eliminada(s) correctamente.`);
       setShowDeleteConfirm(false);
       setRunToDelete(null);
-      
-      // Refresh the runs list
-      await fetchLineRuns();
-      
-      // If the deleted run was currently selected, clear selection
-      if (selectedRun === runToDelete.id) {
-        setSelectedRun(null);
-        setRunData(null);
-        setOperators([]);
-        setActivePanel("select");
-      }
     } else {
-      setMessage(`❌ Error: ${data.error}`);
+      setMessage(
+        `⚠️ ${deletedCount} eliminada(s), ${failed.length} fallaron. Primer error: ${failed[0].error}`
+      );
+    }
+
+    // Refresh the runs list
+    await fetchLineRuns();
+
+    // If the currently open run was part of this group, clear selection
+    if (selectedRun && idsToDelete.includes(selectedRun)) {
+      setSelectedRun(null);
+      setRunData(null);
+      setOperators([]);
+      setActivePanel("select");
     }
   } catch (err) {
     setMessage(`❌ No se pudo eliminar la corrida: ${err.message}`);
@@ -185,6 +212,17 @@ const toggleRunSelection = (runId) => {
     const next = new Set(prev);
     if (next.has(runId)) next.delete(runId);
     else next.add(runId);
+    return next;
+  });
+};
+
+// Marcar/desmarcar TODAS las corridas de una tarjeta agrupada (mismo
+// estilo, varios colores). Se activa/desactiva el grupo completo de una vez.
+const toggleGroupSelection = (ids) => {
+  setSelectedIds((prev) => {
+    const next = new Set(prev);
+    const allSelected = ids.every((id) => next.has(id));
+    ids.forEach((id) => (allSelected ? next.delete(id) : next.add(id)));
     return next;
   });
 };
@@ -321,7 +359,8 @@ const handleBulkDelete = async () => {
     }
   };
 
-  const handleSelectRun = async (runId) => {
+  const handleSelectRun = async (runId, options = {}) => {
+    const { preservePanel = false } = options;
     setLoading(true);
     setMessage("");
 
@@ -338,7 +377,9 @@ const handleBulkDelete = async () => {
         setSelectedRun(runId);
         setRunData(data);
         await fetchOperators(runId);
-        setActivePanel("summary");
+        // Al alternar entre colores mantenemos el panel actual (p. ej.
+        // "operations") en lugar de regresar siempre al resumen.
+        if (!preservePanel) setActivePanel("summary");
       } else {
         setMessage(`❌ Error: ${data.error}`);
       }
@@ -594,6 +635,21 @@ const getRowsFromData = () => {
     setMessage("");
     try {
       const token = localStorage.getItem("token");
+
+      // When an order is chosen, the new run takes that order's style
+      // (tipo+modelo+correlativo, provided by the endpoint as style_from_code)
+      // and its color as a separate field. Otherwise the source run's
+      // style/color are kept (we simply don't send overrides).
+      const selectedWo = copyWorkOrders.find(
+        (wo) => String(wo.work_order_id) === String(selectedWorkOrderId)
+      );
+      const newStyle = selectedWo
+        ? String(selectedWo.style_from_code || selectedWo.estilo || "").trim()
+        : null;
+      const newColor = selectedWo
+        ? String(selectedWo.order_color || selectedWo.mc_color || selectedWo.color || "").trim()
+        : null;
+
       const response = await fetch(`/api/duplicate-run/${copyDialog.run.id}`, {
         method: "POST",
         headers: {
@@ -602,6 +658,8 @@ const getRowsFromData = () => {
         },
         body: JSON.stringify({
           newDate,
+          newStyle,
+          newColor,
           workOrderId: selectedWorkOrderId ? parseInt(selectedWorkOrderId, 10) : null,
         }),
       });
@@ -639,6 +697,97 @@ const getRowsFromData = () => {
     if (filterStyle && String(run.style) !== String(filterStyle)) return false;
     return true;
   });
+
+  // Agrupar las corridas que son el MISMO plan (misma línea, fecha, estilo y
+  // estado de borrador) pero difieren sólo por color/cantidad. Los operadores,
+  // nombres y operaciones son idénticos entre colores — sólo cambia la cantidad
+  // ingresada (y por lo tanto target_pcs) — así que mostrar una tarjeta por
+  // color es redundante. Cada grupo se pinta como UNA sola tarjeta que lista los
+  // colores y suma las metas. No se toca la base de datos: cada color sigue
+  // siendo su propia corrida por debajo.
+  const groupedRuns = (() => {
+    const map = new Map();
+    for (const run of filteredRuns) {
+      const key = [
+        run.line_no,
+        normalizeDate(run.run_date),
+        String(run.style || "").trim().toUpperCase(),
+        run.is_draft ? "draft" : "confirmed",
+      ].join("__");
+
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          rep: run, // corrida representativa (operadores/operaciones iguales)
+          ids: [],
+          colors: [],
+          totalTarget: 0,
+          count: 0,
+        });
+      }
+      const g = map.get(key);
+      if (!g.ids.includes(run.id)) g.ids.push(run.id);
+      const color = String(run.color || "").trim();
+      if (color && !g.colors.includes(color)) g.colors.push(color);
+      g.totalTarget += parseFloat(run.target_pcs) || 0;
+      g.count += 1;
+    }
+    return Array.from(map.values());
+  })();
+
+  // Work order currently chosen in the copy dialog (full object, not just id).
+  // When chosen, the duplicated run takes the order's style (tipo+modelo+
+  // correlativo) and color; otherwise it keeps the source run's style/color.
+  const selectedCopyWorkOrder = copyWorkOrders.find(
+    (wo) => String(wo.work_order_id) === String(selectedWorkOrderId)
+  );
+  const duplicateStyle = selectedCopyWorkOrder
+    ? String(
+        selectedCopyWorkOrder.style_from_code ||
+          selectedCopyWorkOrder.estilo ||
+          copyDialog.run?.style ||
+          ""
+      ).trim()
+    : String(copyDialog.run?.style || "").trim();
+  const duplicateColor = selectedCopyWorkOrder
+    ? String(
+        selectedCopyWorkOrder.order_color ||
+          selectedCopyWorkOrder.mc_color ||
+          selectedCopyWorkOrder.color ||
+          ""
+      ).trim()
+    : String(copyDialog.run?.color || "").trim();
+
+  // Colores (corridas) que comparten línea + fecha + estilo con la corrida
+  // abierta. Cada color es su propia corrida; esta lista alimenta el selector
+  // de color en la vista de operaciones para poder alternar entre ellos.
+  const currentColorRuns = (() => {
+    if (!runData?.run) return [];
+    const cur = runData.run;
+    return lineRuns
+      .filter(
+        (r) =>
+          String(r.line_no) === String(cur.line_no) &&
+          normalizeDate(r.run_date) === normalizeDate(cur.run_date) &&
+          String(r.style || "").trim().toUpperCase() ===
+            String(cur.style || "").trim().toUpperCase() &&
+          Boolean(r.is_draft) === Boolean(cur.is_draft)
+      )
+      .map((r) => ({
+        id: r.id,
+        color: String(r.color || "").trim(),
+        target_pcs: r.target_pcs,
+      }))
+      .sort((a, b) => a.color.localeCompare(b.color));
+  })();
+
+  // Suma de metas de todos los colores de la corrida abierta. La tarjeta de la
+  // lista muestra la meta total del grupo, mientras que el resumen muestra la
+  // meta de un solo color; este dato reconcilia ambas cifras.
+  const currentColorTotal = currentColorRuns.reduce(
+    (sum, cr) => sum + (parseFloat(cr.target_pcs) || 0),
+    0
+  );
 
   if (loading) {
     return (
@@ -789,11 +938,15 @@ const getRowsFromData = () => {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredRuns.map((run) => {
-  const isSelected = selectedIds.has(run.id);
+                {groupedRuns.map((group) => {
+  const run = group.rep;              // corrida representativa del grupo
+  const groupIds = group.ids;        // todas las corridas (una por color)
+  const isMerged = group.count > 1;  // ¿varios colores bajo una tarjeta?
+  const isSelected = groupIds.length > 0 && groupIds.every((id) => selectedIds.has(id));
+  const colorLabel = group.colors.length ? ` (${group.colors.join(", ")})` : "";
   return (
   <div
-    key={run.id}
+    key={group.key}
     className={`rounded-xl border p-4 transition flex flex-col h-full ${
       selectMode && isSelected
         ? "border-red-400 ring-2 ring-red-200 bg-red-50/40"
@@ -805,7 +958,7 @@ const getRowsFromData = () => {
     <div
       className="flex-grow cursor-pointer"
       onClick={() =>
-        selectMode ? toggleRunSelection(run.id) : handleSelectRun(run.id)
+        selectMode ? toggleGroupSelection(groupIds) : handleSelectRun(run.id)
       }
     >
       <div className="flex items-center justify-between mb-2">
@@ -814,7 +967,7 @@ const getRowsFromData = () => {
             <input
               type="checkbox"
               checked={isSelected}
-              onChange={() => toggleRunSelection(run.id)}
+              onChange={() => toggleGroupSelection(groupIds)}
               onClick={(e) => e.stopPropagation()}
               className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
             />
@@ -823,14 +976,21 @@ const getRowsFromData = () => {
           {run.is_draft && (
             <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold uppercase tracking-wide">Borrador</span>
           )}
+          {isMerged && (
+            <span className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold uppercase tracking-wide">
+              {group.colors.length || group.count} colores
+            </span>
+          )}
         </div>
         <div className="text-xs text-gray-500">
           {new Date(run.run_date).toLocaleDateString()}
         </div>
       </div>
-      <div className="text-sm text-gray-600 mb-1">Estilo: {run.style}</div>
+      <div className="text-sm text-gray-600 mb-1">Estilo: {run.style}{colorLabel}</div>
       <div className="text-sm text-gray-600 mb-1">Operadores: {run.operators_count}</div>
-      <div className="text-sm text-gray-600">Meta: {run.target_pcs} pzas</div>
+      <div className="text-sm text-gray-600">
+        Meta{isMerged ? " total" : ""}: {isMerged ? group.totalTarget : run.target_pcs} pzas
+      </div>
       <div className="mt-3 text-xs text-gray-500">
         Creado: {new Date(run.created_at).toLocaleString()}
       </div>
@@ -864,7 +1024,7 @@ const getRowsFromData = () => {
       <button
         onClick={(e) => {
           e.stopPropagation();
-          setRunToDelete(run);
+          setRunToDelete({ ...run, _groupIds: groupIds });
           setShowDeleteConfirm(true);
         }}
         className="text-sm text-red-600 hover:text-red-800 font-medium"
@@ -890,7 +1050,7 @@ const getRowsFromData = () => {
               Duplicar corrida
             </h3>
             <p className="text-sm text-gray-600 mb-4">
-              Copiar línea {copyDialog.run?.line_no} – {copyDialog.run?.style} a una nueva fecha.
+              Copiar línea {copyDialog.run?.line_no} – {styleWithColor(copyDialog.run?.style, copyDialog.run?.color)} a una nueva fecha.
             </p>
             <label className="block mb-4">
               <span className="text-sm font-medium text-gray-700">Nueva fecha</span>
@@ -936,6 +1096,33 @@ const getRowsFromData = () => {
               ) : null}
             </label>
 
+            {/* Vista previa. Al elegir una orden, el estilo se arma con
+                tipo+modelo+correlativo y el color se guarda por separado, de modo
+                que el mismo estilo en otro color queda como una corrida distinta. */}
+            {copyDialog.run && (
+              <div className="mb-4 rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                Se creará la corrida con estilo{" "}
+                <span className="font-semibold text-gray-900">
+                  {duplicateStyle || copyDialog.run.style}
+                </span>
+                {duplicateColor ? (
+                  <>
+                    {" "}y color{" "}
+                    <span className="font-semibold text-gray-900">
+                      {duplicateColor}
+                    </span>
+                  </>
+                ) : null}
+                .
+                {duplicateColor ? (
+                  <span className="block mt-1 text-gray-500">
+                    El color se guarda por separado, así el mismo estilo en otro
+                    color queda como una corrida distinta.
+                  </span>
+                ) : null}
+              </div>
+            )}
+
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => {
@@ -968,7 +1155,9 @@ const getRowsFromData = () => {
         Confirmar eliminación
       </h3>
       <p className="text-sm text-gray-600 mb-4">
-        ¿Estás seguro de que deseas eliminar esta corrida?
+        {runToDelete._groupIds && runToDelete._groupIds.length > 1
+          ? `¿Estás seguro de que deseas eliminar esta corrida y todos sus colores (${runToDelete._groupIds.length} en total)?`
+          : "¿Estás seguro de que deseas eliminar esta corrida?"}
       </p>
       <div className="bg-gray-50 p-3 rounded-lg mb-4">
         <p className="text-sm font-medium text-gray-900">Línea: {runToDelete.line_no}</p>
@@ -1050,7 +1239,7 @@ const getRowsFromData = () => {
               <div>
                 <div className="flex items-center gap-3">
                   <h2 className="text-xl font-semibold text-gray-900">
-                    {runData.run.line_no} • {runData.run.style}
+                    {runData.run.line_no} • {styleWithColor(runData.run.style, runData.run.color)}
                   </h2>
                   <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-800">
                     {new Date(runData.run.run_date).toLocaleDateString()}
@@ -1126,6 +1315,40 @@ const getRowsFromData = () => {
               </div>
             </div>
           </div>
+
+          {/* Selector de color — el mismo estilo puede tener varias corridas,
+              una por color. Vive en el encabezado para que esté disponible
+              tanto en "Resumen" como en "Operaciones". Al elegir un color se
+              carga esa corrida sin cambiar de panel. */}
+          {currentColorRuns.length > 1 && (
+            <div className="rounded-2xl border bg-white shadow-sm px-5 py-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-gray-600 mr-1">Color:</span>
+                {currentColorRuns.map((cr) => {
+                  const isActive = String(cr.id) === String(selectedRun);
+                  return (
+                    <button
+                      key={cr.id}
+                      onClick={() =>
+                        !isActive && handleSelectRun(cr.id, { preservePanel: true })
+                      }
+                      className={`rounded-xl px-3 py-1.5 text-sm font-medium border transition ${
+                        isActive
+                          ? "bg-gray-900 text-white border-gray-900"
+                          : "bg-white text-gray-800 border-gray-200 hover:border-gray-300"
+                      }`}
+                      title={cr.target_pcs != null ? `Meta: ${cr.target_pcs} pzas` : undefined}
+                    >
+                      {cr.color || "Sin color"}
+                    </button>
+                  );
+                })}
+                <span className="ml-auto text-xs text-gray-500">
+                  Meta de todos los colores: {currentColorTotal} pzas
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Panel de resumen */}
           {activePanel === "summary" && (

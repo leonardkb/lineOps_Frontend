@@ -22,6 +22,10 @@ const authHeaders = () => ({
 
 const TABS = [
   { key: "pending", label: "Pendientes" },
+<<<<<<< HEAD
+=======
+  { key: "partially_converted", label: "Parciales" },
+>>>>>>> fb9041d (supermarket, line leader, engineer)
   { key: "converted", label: "Convertidas" },
   { key: "cancelled", label: "Canceladas" },
   { key: "all", label: "Todas" },
@@ -29,10 +33,26 @@ const TABS = [
 
 const STATUS_STYLE = {
   pending: "bg-amber-100 text-amber-700 border-amber-200",
+<<<<<<< HEAD
   converted: "bg-emerald-100 text-emerald-700 border-emerald-200",
   cancelled: "bg-slate-100 text-slate-500 border-slate-200",
 };
 const STATUS_LABEL = { pending: "Pendiente", converted: "Convertida", cancelled: "Cancelada" };
+=======
+  partially_converted: "bg-violet-100 text-violet-700 border-violet-200",
+  converted: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  cancelled: "bg-slate-100 text-slate-500 border-slate-200",
+};
+const STATUS_LABEL = {
+  pending: "Pendiente",
+  partially_converted: "Parcial",
+  converted: "Convertida",
+  cancelled: "Cancelada",
+};
+
+// Una pre-orden es "abierta" (accionable) mientras esté pendiente o parcial.
+const isOpen = (status) => status === "pending" || status === "partially_converted";
+>>>>>>> fb9041d (supermarket, line leader, engineer)
 
 export default function PreOrdenesPanel({
   refreshKey = 0,
@@ -43,7 +63,11 @@ export default function PreOrdenesPanel({
   const navigate = useNavigate();
   const [tab, setTab] = useState("pending");
   const [rows, setRows] = useState([]);
+<<<<<<< HEAD
   const [counts, setCounts] = useState({ pending: 0, converted: 0, cancelled: 0, all: 0 });
+=======
+  const [counts, setCounts] = useState({ pending: 0, partially_converted: 0, converted: 0, cancelled: 0, all: 0 });
+>>>>>>> fb9041d (supermarket, line leader, engineer)
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
@@ -235,13 +259,25 @@ export default function PreOrdenesPanel({
                     </td>
                     <td className="px-4 py-3 text-right font-mono font-bold text-slate-800">
                       {Number(r.pieces || 0).toLocaleString()}
+<<<<<<< HEAD
+=======
+                      {r.status === "partially_converted" && r.remaining_pieces != null && (
+                        <p className="text-[11px] font-normal text-violet-600">
+                          restan {Number(r.remaining_pieces).toLocaleString()}
+                        </p>
+                      )}
+>>>>>>> fb9041d (supermarket, line leader, engineer)
                     </td>
                     <td className="px-4 py-3 text-slate-600">{r.target_date || "—"}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold ${STATUS_STYLE[r.status]}`}>
                         {STATUS_LABEL[r.status] || r.status}
                       </span>
+<<<<<<< HEAD
                       {r.status === "converted" && r.work_order_nos && (
+=======
+                      {(r.status === "converted" || r.status === "partially_converted") && r.work_order_nos && (
+>>>>>>> fb9041d (supermarket, line leader, engineer)
                         <p className="mt-1 font-mono text-[11px] text-slate-400 max-w-[220px] truncate" title={r.work_order_nos}>
                           {r.work_order_nos}
                         </p>
@@ -249,27 +285,51 @@ export default function PreOrdenesPanel({
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
+<<<<<<< HEAD
                         {r.status === "pending" && (
+=======
+                        {isOpen(r.status) && (
+>>>>>>> fb9041d (supermarket, line leader, engineer)
                           <>
                             <button
                               type="button"
                               onClick={() => complete(r)}
                               className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
+<<<<<<< HEAD
                             >
                               Completar a PO <ArrowRight size={13} />
+=======
+                              title={r.status === "partially_converted"
+                                ? "Convertir la siguiente PO cuya tela llegó"
+                                : "Completar a PO"}
+                            >
+                              {r.status === "partially_converted" ? "Convertir más" : "Completar a PO"} <ArrowRight size={13} />
+>>>>>>> fb9041d (supermarket, line leader, engineer)
                             </button>
                             <button
                               type="button"
                               onClick={() => cancel(r)}
                               disabled={busyId === r.id}
+<<<<<<< HEAD
                               title="Cancelar"
+=======
+                              title={r.status === "partially_converted"
+                                ? "Cancelar el resto (las POs ya creadas no se tocan)"
+                                : "Cancelar"}
+>>>>>>> fb9041d (supermarket, line leader, engineer)
                               className="p-1.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40"
                             >
                               <Ban size={15} />
                             </button>
                           </>
                         )}
+<<<<<<< HEAD
                         {r.status !== "converted" && (
+=======
+                        {/* Solo las pendientes puras se eliminan: una parcial ya
+                            tiene POs reales, así que se conserva como rastro. */}
+                        {r.status === "pending" && (
+>>>>>>> fb9041d (supermarket, line leader, engineer)
                           <button
                             type="button"
                             onClick={() => remove(r)}

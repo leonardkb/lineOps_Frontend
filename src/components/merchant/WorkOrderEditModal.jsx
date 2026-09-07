@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+<<<<<<< HEAD
 import { X, RefreshCw, Check, AlertCircle, Save, Plus, Trash2, Copy } from "lucide-react";
+=======
+import { X, RefreshCw, Check, AlertCircle, Save, Plus, Trash2, Copy, Image as ImageIcon, Upload } from "lucide-react";
+>>>>>>> fb9041d (supermarket, line leader, engineer)
 import { API_URL, TALLAS } from "../../lib/masterCodeCatalog";
 
 /*
@@ -212,10 +216,27 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
 
   const [styleDescription, setStyleDescription] = useState(order?.style_description || "");
   const [status, setStatus] = useState(order?.status || "pending");
+<<<<<<< HEAD
+=======
+  const [samMinutes, setSamMinutes] = useState(num(order?.sam_minutes));
+>>>>>>> fb9041d (supermarket, line leader, engineer)
   const [warehouseStock, setWarehouseStock] = useState(num(order?.warehouse_stock));
   const [extraQuantity, setExtraQuantity] = useState(num(order?.extra_quantity));
   const [totalToProduce, setTotalToProduce] = useState(num(order?.total_to_produce));
 
+<<<<<<< HEAD
+=======
+  // Imagen del estilo (vive en master_codes.photo_filename; la orden la expone
+  // como master_code_photo_url). Al elegir un archivo se guarda pendiente y se
+  // sube al guardar; "quitar" marca removePhoto. El SAM y la imagen son del
+  // estilo, así que se aplican a todos los códigos de esta orden.
+  const [photoFile, setPhotoFile] = useState(null);       // File pendiente de subir
+  const [photoPreview, setPhotoPreview] = useState("");   // objectURL del pendiente
+  const [removePhoto, setRemovePhoto] = useState(false);  // quitar la imagen actual
+  const currentPhotoUrl = order?.master_code_photo_url || "";
+  const shownPhoto = photoPreview || (removePhoto ? "" : currentPhotoUrl);
+
+>>>>>>> fb9041d (supermarket, line leader, engineer)
   const [sizes, setSizes] = useState(() => sizesFromOrder(order));
   const [rows, setRows] = useState(() => rowsFromOrder(order));
 
@@ -238,6 +259,27 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
     })();
   }, []);
 
+<<<<<<< HEAD
+=======
+  // Revoke the previous objectURL when the preview changes or on unmount.
+  useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview); }, [photoPreview]);
+
+  // ------- image helpers ------------------------------------------------
+  const onPickPhoto = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { setError("El archivo debe ser una imagen"); return; }
+    if (file.size > 8 * 1024 * 1024) { setError("La imagen no debe superar 8 MB"); return; }
+    setError("");
+    setRemovePhoto(false);
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  };
+  const clearPhoto = () => { setPhotoFile(null); setPhotoPreview(""); setRemovePhoto(true); };
+  const undoPhotoChange = () => { setPhotoFile(null); setPhotoPreview(""); setRemovePhoto(false); };
+
+>>>>>>> fb9041d (supermarket, line leader, engineer)
   // ------- row helpers --------------------------------------------------
   const setRowField = (i, key, val) =>
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
@@ -407,6 +449,13 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
         customer_name: selectedCustomer ? selectedCustomer.name : order?.customer_name,
         style_description: styleDescription,
         status,
+<<<<<<< HEAD
+=======
+        sam_minutes: samMinutes === "" ? order?.sam_minutes : parseFloat(samMinutes) || 0,
+        master_code_photo_url: photoFile
+          ? (photoPreview || order?.master_code_photo_url || null)
+          : (removePhoto ? null : (order?.master_code_photo_url || null)),
+>>>>>>> fb9041d (supermarket, line leader, engineer)
         quantity: orderedQty,
         warehouse_stock: warehouseStock === "" ? order?.warehouse_stock : parseFloat(warehouseStock) || 0,
         extra_quantity: extraQuantity === "" ? order?.extra_quantity : parseFloat(extraQuantity) || 0,
@@ -429,10 +478,35 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
         return;
       }
 
+<<<<<<< HEAD
+=======
+      // If the user picked a new image, upload it straight to S3 via a presigned
+      // PUT first, then send only its key. Mirrors the new-order wizard.
+      let uploadedPhotoKey = null;
+      if (photoFile) {
+        const presRes = await fetch(`${API_URL}/api/master-codes/photo-upload-url`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ filename: photoFile.name, contentType: photoFile.type }),
+        });
+        const pres = await presRes.json().catch(() => ({}));
+        if (!presRes.ok || !pres.uploadUrl) throw new Error(pres.error || "No se pudo preparar la subida de la imagen");
+        const putRes = await fetch(pres.uploadUrl, { method: "PUT", body: photoFile });
+        if (!putRes.ok) throw new Error("No se pudo subir la imagen");
+        uploadedPhotoKey = pres.photoKey;
+      }
+
+>>>>>>> fb9041d (supermarket, line leader, engineer)
       const body = { styleDescription, status, totalToProduce: total, lines: cells };
       if (customerId) body.customerId = Number(customerId);
       if (warehouseStock !== "") body.warehouseStock = parseFloat(warehouseStock) || 0;
       if (extraQuantity !== "") body.extraQuantity = parseFloat(extraQuantity) || 0;
+<<<<<<< HEAD
+=======
+      if (samMinutes !== "") body.samMinutes = parseFloat(samMinutes) || 0;
+      if (uploadedPhotoKey) body.photoKey = uploadedPhotoKey;
+      else if (removePhoto) body.removePhoto = true;
+>>>>>>> fb9041d (supermarket, line leader, engineer)
 
       const res = await fetch(`${API_URL}/api/production-orders/${encodeURIComponent(order.id)}`, {
         method: "PUT",
@@ -510,6 +584,69 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
             </Field>
           </Section>
 
+<<<<<<< HEAD
+=======
+          {/* ---------------- SAM + imagen del estilo ---------------- */}
+          <Section
+            title="SAM e imagen del estilo"
+            hint="Pertenecen al estilo: se aplican a todos los códigos de esta orden."
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
+              <Field label="SAM (minutos)" hint="Minutos estándar por pieza.">
+                <input
+                  value={samMinutes}
+                  onChange={(e) => setSamMinutes(e.target.value.replace(/[^0-9.]/g, ""))}
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  className={numFieldCls}
+                />
+              </Field>
+
+              <div className="sm:col-span-2 min-w-0">
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1 uppercase tracking-wide">
+                  Imagen del estilo
+                </label>
+                <div className="flex items-start gap-3">
+                  <div className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center">
+                    {shownPhoto ? (
+                      <img src={shownPhoto} alt="Estilo" className="h-full w-full object-cover" />
+                    ) : (
+                      <ImageIcon size={22} className="text-slate-300" />
+                    )}
+                  </div>
+                  <div className="min-w-0 space-y-1.5">
+                    <div className="flex flex-wrap gap-2">
+                      <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                        <Upload size={13} /> {shownPhoto ? "Cambiar imagen" : "Subir imagen"}
+                        <input type="file" accept="image/*" className="hidden" onChange={onPickPhoto} />
+                      </label>
+                      {shownPhoto && (
+                        <button type="button" onClick={clearPhoto}
+                          className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50">
+                          <Trash2 size={13} /> Quitar
+                        </button>
+                      )}
+                      {(photoFile || removePhoto) && (
+                        <button type="button" onClick={undoPhotoChange}
+                          className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100">
+                          Deshacer
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      {photoFile
+                        ? `Nueva imagen: ${photoFile.name}`
+                        : removePhoto
+                          ? "Se quitará la imagen al guardar."
+                          : "JPG o PNG, máx 8 MB."}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Section>
+
+>>>>>>> fb9041d (supermarket, line leader, engineer)
           {/* ---------------- sizes ---------------- */}
           <Section title="Tallas" hint="Al quitar una talla se eliminan sus cantidades al guardar.">
             <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">

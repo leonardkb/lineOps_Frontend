@@ -465,10 +465,16 @@ export default function LineLeaderPage() {
     };
     
     const run = currentStyle.run;
+    const style = String(run.style ?? "");
+    const color = String(run.color ?? "");
     return {
       line: String(run.line_no ?? ""),
       date: String(run.run_date ?? ""),
-      style: String(run.style ?? ""),
+      style,
+      color,
+      // Style stays the plain estilo; color is a separate field. This is only a
+      // display label so a same-style/different-color run is still readable.
+      styleLabel: color ? `${style} (${color})` : style,
       workOrderNo: String(run.work_order_no ?? ""),
       operators: String(run.operators_count ?? ""),
       sam: String(run.sam_minutes ?? ""),
@@ -1635,7 +1641,7 @@ export default function LineLeaderPage() {
               <div className="text-xl font-semibold text-gray-900">
                 Línea {user?.line_number} • {header.date || ""}
                 <span className="ml-3 inline-flex items-center rounded-full border bg-gray-50 px-3 py-1 text-sm text-gray-700">
-                  {header.style || "Corrida"}
+                  {header.styleLabel || "Corrida"}
                 </span>
                 {header.workOrderNo && (
                   <span className="ml-2 inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm text-blue-800">
@@ -1716,7 +1722,7 @@ export default function LineLeaderPage() {
                         : "text-gray-500 hover:text-gray-700"
                     }`}
                   >
-                    {style.run.style}
+                    {style.run.color || style.run.style}
                     <span className="ml-1 text-xs text-gray-400">
                       ({Math.round(style.run.target_pcs || 0)} pcs)
                     </span>
@@ -1872,7 +1878,7 @@ export default function LineLeaderPage() {
                     <div className="p-6">
                       <div className="mb-6">
                         <h3 className="text-lg font-semibold text-gray-900">
-                          Ingresar producción por hora - Estilo {header.style}
+                          Ingresar producción por hora - Estilo {header.styleLabel}
                         </h3>
                         <p className="text-sm text-gray-600 mt-1">
                           Ingresa las piezas cosidas en cada bloque horario
