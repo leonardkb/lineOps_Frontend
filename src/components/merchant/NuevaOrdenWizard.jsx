@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { API_URL, TIPOS, MODELOS, TALLAS } from "../../lib/masterCodeCatalog";
-import MerchantNavbar from "../../components/merchant/MerchantNavbar";
+import MerchantNavbar from "./MerchantNavbar";
 
 /* -----------------------------------------------------------------------
  *  Step-by-step wizard: creates the master codes (one per size × color)
@@ -212,16 +212,12 @@ export default function NuevaOrdenWizard() {
             ? { ...r, estilo: p.estilo || r.estilo, customerPo: p.customer_po || r.customerPo }
             : r)));
         }
-<<<<<<< HEAD
-        showToast(`Pre-orden ${p.pre_order_no} cargada · ${Number(p.pieces || 0).toLocaleString()} pzs por repartir`);
-=======
         // "Por repartir" = lo que falta por convertir (importa al reabrir una parcial).
         const remaining = Number(p.remaining_pieces != null ? p.remaining_pieces : p.pieces) || 0;
         const already = p.status === "partially_converted" && p.work_order_nos
           ? ` · ya convertidas: ${p.work_order_nos}`
           : "";
         showToast(`Pre-orden ${p.pre_order_no} cargada · ${remaining.toLocaleString()} pzs por repartir${already}`);
->>>>>>> fb9041d (supermarket, line leader, engineer)
       } catch (err) {
         showToast(err.message, true);
       }
@@ -390,14 +386,10 @@ export default function NuevaOrdenWizard() {
 
   // Piezas comprometidas en la pre-orden vs. las capturadas hasta ahora. Es una
   // referencia, no un candado: la orden real puede subir o bajar.
-<<<<<<< HEAD
-  const preOrderPieces = preOrder ? Number(preOrder.pieces) || 0 : 0;
-=======
   // Al reabrir una pre-orden parcial, la referencia es lo que FALTA, no el total.
   const preOrderPieces = preOrder
     ? Number(preOrder.remaining_pieces != null ? preOrder.remaining_pieces : preOrder.pieces) || 0
     : 0;
->>>>>>> fb9041d (supermarket, line leader, engineer)
   const piecesDiff = preOrder ? orderedQty - preOrderPieces : 0;
 
   // ------- step handlers ----------------------------------------------
@@ -603,11 +595,6 @@ export default function NuevaOrdenWizard() {
             body: JSON.stringify({
               workOrderIds: (data.workOrders || [data.workOrder]).filter(Boolean).map((w) => w.id),
               workOrderNos: nos,
-<<<<<<< HEAD
-            }),
-          });
-          if (!convRes.ok) throw new Error("Las órdenes se crearon, pero la pre-orden sigue pendiente");
-=======
               // Parcial: crea solo estas POs y deja el resto de la pre-orden
               // pendiente. convertedPieces alimenta el contador y encoge la ficha
               // PRE (y sus holds) en el tablero por lo que acaba de salir.
@@ -621,7 +608,6 @@ export default function NuevaOrdenWizard() {
               ? `✅ ${nos.length} PO creada(s); ${preOrder.pre_order_no} queda parcial con el resto pendiente`
               : `✅ ${preOrder.pre_order_no} convertida`
           );
->>>>>>> fb9041d (supermarket, line leader, engineer)
           setTimeout(() => navigate("/pre-ordenes"), 1200);
           return;
         } catch (err) {
@@ -1090,8 +1076,6 @@ export default function NuevaOrdenWizard() {
               </div>
             )}
 
-<<<<<<< HEAD
-=======
             {/* Conversión incremental: crear solo las POs cuya tela llegó y dejar
                 el resto de la pre-orden pendiente en el tablero. */}
             {preOrder && (
@@ -1117,7 +1101,6 @@ export default function NuevaOrdenWizard() {
               </label>
             )}
 
->>>>>>> fb9041d (supermarket, line leader, engineer)
             {missing.length > 0 && (
               <div className="mt-4 rounded-lg bg-rose-50 border border-rose-200 p-3">
                 <p className="text-xs font-semibold text-rose-700 flex items-center gap-1 mb-1">
