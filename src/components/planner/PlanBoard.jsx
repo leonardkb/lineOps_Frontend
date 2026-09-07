@@ -1,15 +1,8 @@
 // components/planner/PlanBoard.jsx
-<<<<<<< HEAD
-import { useState, useEffect, useMemo } from "react";
-import { format, addDays, differenceInDays, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, startOfMonth, endOfMonth, startOfYear, addMonths, eachWeekOfInterval, eachMonthOfInterval, getWeek } from "date-fns";
-import { es } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Package, Loader2, Check, AlertCircle, GripVertical, Search, X } from "lucide-react";
-=======
 import { useState, useEffect, useMemo, useRef } from "react";
 import { format, addDays, differenceInDays, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, startOfMonth, endOfMonth, startOfYear, addMonths, eachWeekOfInterval, eachMonthOfInterval, getWeek } from "date-fns";
 import { es } from "date-fns/locale";
 import { ChevronLeft, ChevronRight, Package, Loader2, Check, AlertCircle, GripVertical, Search, X, Send, Lock, CalendarDays } from "lucide-react";
->>>>>>> fb9041d (supermarket, line leader, engineer)
 import { API_URL } from "../../lib/masterCodeCatalog";
 import { colorForWO, WO_PALETTE, buildStyleColorMap } from "../../lib/workOrderColors";
 import PendingBalances, { useDayBalances, cellKey } from "./PendingBalances";
@@ -31,52 +24,12 @@ const producedOf = (wo) => Number(wo?.produced_quantity) || 0;
 const coveredOf = (wo) => Math.max(assignedOf(wo), producedOf(wo));
 const remainingOf = (wo) => Math.max(targetOf(wo) - coveredOf(wo), 0);
 
-<<<<<<< HEAD
-// Shared breakdown: PO cliente → estilo → talla×cantidad, from work-order lines.
-// Pass a `color` to scope it to a single color (used by the pool card and the
-// assignment-details modal); omit it to break down every color in the order.
-function buildBreakdownFromLines(lines, color) {
-  const detail = new Map(); // `${po}\u0000${estilo}` -> { customerPo, estilo, sizeMap, total }
-  (Array.isArray(lines) ? lines : []).forEach((l) => {
-    if (!l || l.color == null) return;
-    if (color !== undefined && String(l.color || "") !== String(color || "")) return;
-    const po = l.customerPo || "";
-    const est = l.estilo || "";
-    const dk = `${po}\u0000${est}`;
-    let d = detail.get(dk);
-    if (!d) { d = { customerPo: po, estilo: est, sizeMap: new Map(), total: 0 }; detail.set(dk, d); }
-    const q = Number(l.quantity) || 0;
-    if (l.talla) d.sizeMap.set(l.talla, (d.sizeMap.get(l.talla) || 0) + q);
-    d.total += q;
-  });
-  const poMap = new Map();
-  for (const d of detail.values()) {
-    let g = poMap.get(d.customerPo);
-    if (!g) { g = { customerPo: d.customerPo, total: 0, styles: [] }; poMap.set(d.customerPo, g); }
-    g.total += d.total;
-    g.styles.push({
-      estilo: d.estilo,
-      total: d.total,
-      sizes: [...d.sizeMap.entries()].map(([talla, quantity]) => ({ talla, quantity })),
-    });
-  }
-  return [...poMap.values()]
-    .sort((a, b) => String(a.customerPo).localeCompare(String(b.customerPo)))
-    .map((g) => ({ ...g, styles: g.styles.sort((a, b) => String(a.estilo).localeCompare(String(b.estilo))) }));
-}
-
-// Compact cell sizing — tuned so ~3 months of weekdays fit without scrolling.
-const CELL = 22;   // px — square size
-const GAP = 3;     // px — gap between squares
-const LABEL = 52;  // px — line label column width
-=======
 // When an order is packed across days each cell is filled to the line's full
 // daily capacity, so only the final cell carries the remainder. We don't want
 // that tail to be a tiny sliver, so the last cell must hold at least this many
 // pzs — we borrow pieces back from the earlier (full) cells until it does. The
 // floor is skipped only when the whole order is itself smaller than this.
 const MIN_LAST_CELL = 100;
->>>>>>> fb9041d (supermarket, line leader, engineer)
 
 // Shared breakdown: PO cliente → estilo → talla×cantidad, from work-order lines.
 // Pass a `color` to scope it to a single color (used by the pool card and the
@@ -177,10 +130,7 @@ export default function PlanBoard({
   const CELL_H = cellDetails ? 60 : CELL;
   const [assignments, setAssignments] = useState([]);
   const [holds, setHolds] = useState([]); // PRE#### line/day holds (Plan Board reservations)
-<<<<<<< HEAD
-=======
   const [holidays, setHolidays] = useState([]); // non-working days (Días festivos): plant-wide or per-line
->>>>>>> fb9041d (supermarket, line leader, engineer)
   const [workOrders, setWorkOrders] = useState([]);
   const [lineRuns, setLineRuns] = useState([]);
   const [plannerLines, setPlannerLines] = useState([]); // lines the planner added but engineering hasn't configured
@@ -206,8 +156,6 @@ export default function PlanBoard({
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [pickingDest, setPickingDest] = useState(false); // choosing the target cell
-<<<<<<< HEAD
-=======
   // When picking a destination, insertMode decides what the tap does:
   //   false → pile the selection into the target and re-pack forward (move-batch)
   //   true  → INSERT the selection at the target and ripple the line's tail
@@ -216,7 +164,6 @@ export default function PlanBoard({
   // Snapshot returned by the last insert (single drag OR multi-select). While set,
   // an "Deshacer" chip offers to reverse that whole ripple in one shot.
   const [lastInsertUndo, setLastInsertUndo] = useState(null);
->>>>>>> fb9041d (supermarket, line leader, engineer)
   const [toast, setToast] = useState(null);
   const [showPool, setShowPool] = useState(true);
   const [showSizes, setShowSizes] = useState(false); // compact pool by default; reveal size chips on demand
@@ -231,8 +178,6 @@ export default function PlanBoard({
   // back to the previous behavior (show every open order) so the board still works.
   const [merchantPlan, setMerchantPlan] = useState([]);
   const [merchantOk, setMerchantOk] = useState(true);
-<<<<<<< HEAD
-=======
   // Global equivalencia factor from the merchant board (eq/pza = SAM ÷ equivalencia).
   // Lets the plan board convert the real assigned pieces into the same "piezas
   // equivalentes" the merchant plans in. Defaults to 10 until the plan loads.
@@ -248,7 +193,6 @@ export default function PlanBoard({
   const [sendNote, setSendNote] = useState("");
   const [sendBusy, setSendBusy] = useState(false);
   const [publications, setPublications] = useState([]); // semanas ya publicadas
->>>>>>> fb9041d (supermarket, line leader, engineer)
 
   // User-chosen display order for the line rows (array of line_no as strings),
   // persisted per browser. Purely visual — it never touches assignments or runs.
@@ -392,11 +336,7 @@ export default function PlanBoard({
       setArmedPO(null); setDraggedPO(null); setDraggedAssignment(null); setDropTarget(null);
       setDraggedLine(null); setLineDropTarget(null);
       setPickingDest((wasPicking) => {
-<<<<<<< HEAD
-        if (wasPicking) return false;        // first Esc: just leave dest mode
-=======
         if (wasPicking) { setInsertMode(false); return false; } // first Esc: just leave dest mode
->>>>>>> fb9041d (supermarket, line leader, engineer)
         setSelectMode(false); setSelectedIds(new Set()); // second Esc: leave select mode
         return false;
       });
@@ -407,11 +347,7 @@ export default function PlanBoard({
 
   // Individual cells only exist in Diario; leaving that view drops selection.
   useEffect(() => {
-<<<<<<< HEAD
-    if (viewMode !== "day") { setSelectMode(false); setPickingDest(false); setSelectedIds(new Set()); }
-=======
     if (viewMode !== "day") { setSelectMode(false); setPickingDest(false); setInsertMode(false); setSelectedIds(new Set()); }
->>>>>>> fb9041d (supermarket, line leader, engineer)
   }, [viewMode]);
 
   const showToast = (msg, isError = false) => {
@@ -423,11 +359,6 @@ export default function PlanBoard({
     // Only the initial mount shows the full-page "Cargando Plan Board..."
     // gate. Post-mutation refetches pass { silent: true } so the board stays
     // rendered and updates in place instead of flashing the loader.
-<<<<<<< HEAD
-    if (!silent) setLoading(true);
-    try {
-      const [aRes, woRes, lrRes, mpRes, plRes, hRes] = await Promise.all([
-=======
     // Modo snapshot (supermercado): los datos ya vienen resueltos, no hay nada
     // que pedir. Se pinta tal cual para que el tablero sea idéntico al que el
     // planner envió, aunque el tablero vivo ya haya cambiado.
@@ -448,17 +379,12 @@ export default function PlanBoard({
     if (!silent) setLoading(true);
     try {
       const [aRes, woRes, lrRes, mpRes, plRes, hRes, holRes] = await Promise.all([
->>>>>>> fb9041d (supermarket, line leader, engineer)
         fetch(`${API_URL}/api/line-assignments`, { headers: authHeaders() }),
         fetch(`${API_URL}/api/work-orders`, { headers: authHeaders() }),
         fetch(`${API_URL}/api/line-runs`, { headers: authHeaders() }),
         fetch(`${API_URL}/api/merchant-plan`, { headers: authHeaders() }).catch(() => null),
         fetch(`${API_URL}/api/planning/lines`, { headers: authHeaders() }).catch(() => null),
         fetch(`${API_URL}/api/pre-order-holds`, { headers: authHeaders() }).catch(() => null),
-<<<<<<< HEAD
-      ]);
-      const a = await aRes.json(); if (a.success) setAssignments(a.assignments);
-=======
         fetch(`${API_URL}/api/holidays`, { headers: authHeaders() }).catch(() => null),
       ]);
       const a = await aRes.json(); if (a.success) setAssignments(a.assignments);
@@ -468,7 +394,6 @@ export default function PlanBoard({
         const hol = holRes && holRes.ok ? await holRes.json() : null;
         setHolidays(hol && hol.success ? (hol.holidays || []) : []);
       } catch { setHolidays([]); }
->>>>>>> fb9041d (supermarket, line leader, engineer)
       // Pre-order holds on line/day cells. Optional: an older backend without the
       // endpoint just yields no holds, and the board renders as before.
       try {
@@ -481,14 +406,10 @@ export default function PlanBoard({
       // The merchant weekly plan is the upstream source for the pool.
       try {
         const mp = mpRes && mpRes.ok ? await mpRes.json() : null;
-<<<<<<< HEAD
-        if (mp && mp.success) { setMerchantPlan(mp.plan || []); setMerchantOk(true); }
-=======
         if (mp && mp.success) {
           setMerchantPlan(mp.plan || []); setMerchantOk(true);
           if (Number(mp.equivalence) > 0) setEquivalence(Number(mp.equivalence));
         }
->>>>>>> fb9041d (supermarket, line leader, engineer)
         else { setMerchantPlan([]); setMerchantOk(false); }
       } catch { setMerchantPlan([]); setMerchantOk(false); }
     } catch (err) {
@@ -549,10 +470,7 @@ export default function PlanBoard({
 
   // Drag handlers for the line label (used as both drag handle and drop zone).
   const onLineDragStart = (e, lineNo) => {
-<<<<<<< HEAD
-=======
     if (readOnly) return;   // reordenar filas es una preferencia del planner
->>>>>>> fb9041d (supermarket, line leader, engineer)
     setDraggedLine(String(lineNo));
     try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", `line:${lineNo}`); } catch {}
   };
@@ -637,11 +555,6 @@ export default function PlanBoard({
   // que el planner sepa qué se le viene en esa semana. Cuando el merchant las
   // convierte, el backend cambia esa fila por las de las POs reales y la
   // tarjeta se vuelve una orden normal, arrastrable, en la misma semana.
-<<<<<<< HEAD
-  const preOrderJobs = useMemo(() => (merchantPlan || [])
-    .filter((r) => r.pre_order_id != null)
-    .map((r) => ({
-=======
   // Piezas ya reservadas en el tablero por pre-orden (holds). Se restan de la
   // carga pendiente para que una pre-orden colocada se comporte como una PO:
   // encoge conforme se reserva y sale de la bolsa cuando ya está completa.
@@ -660,7 +573,6 @@ export default function PlanBoard({
       const planned = Number(r.cantidad) || 0;
       const held = heldByPreOrder.get(r.pre_order_id) || 0; // ya apartado en el tablero
       return {
->>>>>>> fb9041d (supermarket, line leader, engineer)
       key: `pre:${r.pre_order_id}`,
       preOrderId: r.pre_order_id,
       isPreOrderRow: true,
@@ -672,26 +584,18 @@ export default function PlanBoard({
       style_code: r.style_code || "",
       estilo: r.estilo || "",
       color: r.color || null,
-<<<<<<< HEAD
-      remaining: Number(r.cantidad) || 0,
-=======
       remaining: Math.max(planned - held, 0), // sólo lo que aún falta reservar
->>>>>>> fb9041d (supermarket, line leader, engineer)
       sizes: Array.isArray(r.sizes) ? r.sizes : [],
       breakdown: [],
       sam_minutes: Number(r.sam_minutes) || 0,
       commitment_date: null,
       week: r.week_start || null,
-<<<<<<< HEAD
-    })), [merchantPlan]);
-=======
       };
     })
     // Una pre-orden totalmente reservada en el tablero sale de la bolsa, igual
     // que una PO desaparece al asignarse por completo. El umbral en 1 evita
     // dejar tarjetas fantasma de "0 pzas" por remanentes de redondeo.
     .filter((j) => j.remaining >= 1), [merchantPlan, heldByPreOrder]);
->>>>>>> fb9041d (supermarket, line leader, engineer)
   // Gate the pool by the plan only when it actually loaded; otherwise fall back.
   const gateByMerchant = merchantOk;
 
@@ -908,8 +812,6 @@ export default function PlanBoard({
     // Daily view: weekdays only (no weekend work) up to ~6 months ahead. Hiding
     // Sat/Sun roughly triples the density so ~3 months fit without scrolling.
     if (viewMode === "day") {
-<<<<<<< HEAD
-=======
       // Semanas publicadas: el calendario se recorta a esos lunes→viernes y
       // nada más. El supermercado no puede navegar fuera de lo enviado.
       if (Array.isArray(restrictWeeks) && restrictWeeks.length > 0) {
@@ -923,7 +825,6 @@ export default function PlanBoard({
               .filter((d) => { const w = d.getDay(); return w !== 0 && w !== 6; });
           });
       }
->>>>>>> fb9041d (supermarket, line leader, engineer)
       return eachDayOfInterval({ start: currentDate, end: addDays(currentDate, 182) })
         .filter((d) => { const w = d.getDay(); return w !== 0 && w !== 6; });
     }
@@ -937,9 +838,6 @@ export default function PlanBoard({
 
   // Aggregated columns: week → weekly blocks of the current month; month → 12 monthly blocks of the year.
   const periods = useMemo(() => {
-<<<<<<< HEAD
-    if (viewMode === "week") {
-=======
     // Con semanas publicadas las columnas agregadas se arman SÓLO con esas
     // semanas: una columna por semana en Semanal, y una columna por cada mes que
     // toque alguna semana publicada en Mensual. Así ninguna vista puede mostrar
@@ -964,7 +862,6 @@ export default function PlanBoard({
           })
           .filter(Boolean);
       }
->>>>>>> fb9041d (supermarket, line leader, engineer)
       // 26 rolling weeks from the current week; scroll right for future weeks.
       const first = startOfWeek(currentDate, { weekStartsOn: 1 });
       return Array.from({ length: 26 }, (_, i) => {
@@ -980,8 +877,6 @@ export default function PlanBoard({
       });
     }
     if (viewMode === "month") {
-<<<<<<< HEAD
-=======
       if (restricted) {
         // Meses distintos que toca cualquier semana publicada (una semana puede
         // caer a caballo entre dos meses; incluimos ambos).
@@ -1002,7 +897,6 @@ export default function PlanBoard({
           };
         });
       }
->>>>>>> fb9041d (supermarket, line leader, engineer)
       const s = startOfYear(currentDate);
       return eachMonthOfInterval({ start: s, end: endOfMonth(addMonths(s, 11)) }).map((mStart) => ({
         key: format(mStart, "yyyy-MM"),
@@ -1026,11 +920,7 @@ export default function PlanBoard({
       });
     }
     return [];
-<<<<<<< HEAD
-  }, [viewMode, currentDate]);
-=======
   }, [viewMode, currentDate, restrictWeeks]);
->>>>>>> fb9041d (supermarket, line leader, engineer)
 
   // Sum + per-order breakdown for a line within a [start,end] period (YYYY-MM-DD strings).
   const aggFor = (lineNo, startYmd, endYmd) => {
@@ -1058,10 +948,6 @@ export default function PlanBoard({
       cur.qty += q;
       orders.set(k, cur);
     });
-<<<<<<< HEAD
-    const list = [...orders.values()];
-    return { total, orders: list, hasPre: list.some((o) => o.pre) };
-=======
     // Pre-order holds (PRE####) reserve line/day capacity just like the daily
     // view shows them, so fold them into the same period totals. They aren't
     // real assignments (no work_order_id), so key them by their hold identity
@@ -1091,7 +977,6 @@ export default function PlanBoard({
     // cell/tooltip/modal can call out how much of the load is pre-order.
     const preQty = list.reduce((s, o) => s + (o.pre ? o.qty : 0), 0);
     return { total, orders: list, hasPre: list.some((o) => o.pre), preQty };
->>>>>>> fb9041d (supermarket, line leader, engineer)
   };
 
   // Read a DATE/ISO value as its calendar day WITHOUT timezone shifting.
@@ -1299,8 +1184,6 @@ export default function PlanBoard({
   const woStyle = (a) => a.style_description || woOf(a.work_order_id)?.style_description || "";
   const woPo = (a) => a.customer_po || woOf(a.work_order_id)?.customer_po || "";
 
-<<<<<<< HEAD
-=======
   // ---- piezas equivalentes de lo ASIGNADO en el tablero ------------------
   // eq/pza = SAM ÷ equivalencia ; se pesa por las piezas REALES asignadas en el
   // piso (assigned_quantity), no por la cantidad total del merchant. Así el eq
@@ -1517,7 +1400,6 @@ export default function PlanBoard({
     }
   };
 
->>>>>>> fb9041d (supermarket, line leader, engineer)
   const step = (dir) => {
     if (viewMode === "day") return setCurrentDate(addDays(currentDate, dir * 7));
     if (viewMode === "week") return setCurrentDate(addDays(currentDate, dir * 28));
@@ -1601,21 +1483,6 @@ export default function PlanBoard({
     return runs[0] || null;
   };
 
-<<<<<<< HEAD
-  // The MERCHANT SAM for a given estilo/style. The run's own sam_minutes (the
-  // "SAM producción") can drift from the real style SAM the merchant set on the
-  // master_code; that real SAM travels with the work order (work_orders.sam_minutes).
-  // line_runs.style stores the style_code, so we match it back to a loaded work order
-  // (by style_code, else estilo). Returns null when no merchant SAM is known.
-  const merchantSamForStyle = (styleCode) => {
-    const code = String(styleCode || "").trim().toUpperCase();
-    if (!code) return null;
-    const norm = (s) => String(s || "").trim().toUpperCase();
-    const wo = workOrders.find((w) => norm(w.style_code) === code || norm(w.estilo) === code);
-    const sam = Number(wo?.sam_minutes) || 0;
-    if (sam <= 0) return null;
-    return { sam, estilo: String(wo?.estilo || "").trim() };
-=======
   // The MERCHANT SAM for a SPECIFIC assigned order (by work order + color) — NOT by
   // style_code. Two orders can share a style_code with different sam_minutes
   // snapshots, so a by-style `workOrders.find` returns whichever order sits first in
@@ -1629,7 +1496,6 @@ export default function PlanBoard({
     if (!(sam > 0)) sam = Number(woOf(woId)?.sam_minutes) || 0;
     if (!(sam > 0)) return null;
     return { sam, estilo: String(woOf(woId)?.estilo || "").trim() };
->>>>>>> fb9041d (supermarket, line leader, engineer)
   };
 
   // The style CODE a single assignment represents. line_runs.style stores the
@@ -1706,22 +1572,14 @@ export default function PlanBoard({
   const stylesAssignedOnDay = (lineNo, dateStr) => {
     if (!dateStr) return [];
     const norm = (s) => String(s || "").trim().toUpperCase();
-<<<<<<< HEAD
-    const byStyle = new Map(); // normalized style_code -> { style, run }
-=======
     const byStyle = new Map(); // normalized style_code -> { style, run, woId, color }
->>>>>>> fb9041d (supermarket, line leader, engineer)
 
     // (a) Runs configured for this line on this day.
     for (const run of lineRuns.filter((r) => String(r.line_no) === String(lineNo) && ymd(r.run_date) === dateStr)) {
       const style = String(run.style || "").trim();
       const key = norm(style);
       if (!key) continue;
-<<<<<<< HEAD
-      if (!byStyle.has(key)) byStyle.set(key, { style, run });
-=======
       if (!byStyle.has(key)) byStyle.set(key, { style, run, woId: run.work_order_id ?? null, color: run.color ?? null });
->>>>>>> fb9041d (supermarket, line leader, engineer)
     }
 
     // (b) Styles assigned that day (by the orders' style_code) not already covered.
@@ -1731,13 +1589,6 @@ export default function PlanBoard({
     for (const a of cell) {
       const style = styleCodeOfAssignment(a);
       const key = norm(style);
-<<<<<<< HEAD
-      if (!key || byStyle.has(key)) continue;
-      const linkedRun = a.line_run_id != null
-        ? lineRuns.find((r) => String(r.id) === String(a.line_run_id))
-        : null;
-      byStyle.set(key, { style, run: runForStyle(lineNo, dateStr, style, linkedRun) });
-=======
       if (!key) continue;
       if (byStyle.has(key)) {
         // A run-derived row may not carry the owning order; backfill it so its SAM
@@ -1755,7 +1606,6 @@ export default function PlanBoard({
         woId: a.work_order_id,
         color: a.color ?? null,
       });
->>>>>>> fb9041d (supermarket, line leader, engineer)
     }
 
     return [...byStyle.values()].sort((a, b) => String(a.style).localeCompare(String(b.style)));
@@ -1793,10 +1643,7 @@ export default function PlanBoard({
   // each PATCH is scoped to (line, style) + the chosen date/scope so the server
   // recomputes that style's daily capacity without touching earlier dates.
   const saveOperators = async () => {
-<<<<<<< HEAD
-=======
     if (readOnly) return;
->>>>>>> fb9041d (supermarket, line leader, engineer)
     if (!editLine) return;
     if (!editLine.effDate) return showToast("Seleccione una fecha", true);
     const rows = stylesAssignedOnDay(editLine.lineNo, editLine.effDate);
@@ -1888,10 +1735,6 @@ export default function PlanBoard({
     }
   };
 
-<<<<<<< HEAD
-  // ---- DROP: fill the line day by day, carrying the remainder forward ----
-  const assignPOAcrossDays = async (po, lineNo, startDate) => {
-=======
   // In "2 órdenes/día" (split-day) mode each order takes at most HALF the
   // line's daily target on a given day, never exceeding that day's remaining
   // room — leaving space for a second order to share the day. Off → the full
@@ -1906,7 +1749,6 @@ export default function PlanBoard({
   // ---- DROP: fill the line day by day, carrying the remainder forward ----
   const assignPOAcrossDays = async (po, lineNo, startDate) => {
     clearInsertUndo();
->>>>>>> fb9041d (supermarket, line leader, engineer)
     // A pre-order card places a HOLD, not a real assignment.
     if (po.isPreOrderRow || po.preOrderId != null) return assignHoldAcrossDays(po, lineNo, startDate);
     let remaining = po.remaining != null ? po.remaining : remainingOf(po);
@@ -1933,11 +1775,8 @@ export default function PlanBoard({
         daysScanned++;
         // No production on weekends — skip Sat/Sun (not a failure).
         if (day.getDay() === 0 || day.getDay() === 6) { day = addDays(day, 1); continue; }
-<<<<<<< HEAD
-=======
         // Días festivos / paros — skip a blocked day for this line (not a failure).
         if (holidayFor(lineNo, day)) { day = addDays(day, 1); continue; }
->>>>>>> fb9041d (supermarket, line leader, engineer)
         const dateStr = format(day, "yyyy-MM-dd");
 
         // A day may already carry other POs; available_capacity is the line's
@@ -1947,15 +1786,7 @@ export default function PlanBoard({
         const lineInfo = capCache[dateStr].find((l) => String(l.line_no) === String(lineNo));
 
         // No capacity configured for this line/date → skip the day (not a failure).
-<<<<<<< HEAD
-        if (!lineInfo) {
-          skippedNoCap++;
-          day = addDays(day, 1);
-          continue;
-        }
-=======
         if (!lineInfo) { skippedNoCap++; day = addDays(day, 1); continue; }
->>>>>>> fb9041d (supermarket, line leader, engineer)
 
         const available = Math.floor(Number(lineInfo.available_capacity) || 0);
         if (available <= 0) { skippedFull++; day = addDays(day, 1); continue; } // day full → next day
@@ -1996,17 +1827,10 @@ export default function PlanBoard({
           headers: authHeaders(),
           body: JSON.stringify({
             workOrderId: po.workOrderId != null ? po.workOrderId : po.id,
-<<<<<<< HEAD
-            lineNo: lineInfo.line_no,           // exact value the backend expects
-            assignedDate: dateStr,
-            quantity: qty,
-            plannedStartDate: dateStr,
-=======
             lineNo: cell.lineNoExact,           // exact value the backend expects
             assignedDate: cell.dateStr,
             quantity: cell.qty,
             plannedStartDate: cell.dateStr,
->>>>>>> fb9041d (supermarket, line leader, engineer)
             color: po.color || null,
           }),
         });
@@ -2057,10 +1881,7 @@ export default function PlanBoard({
     if (remaining <= 0) return showToast("Esta pre-orden no tiene piezas por reservar.", true);
     const label = `${po.work_order_no}${po.color ? " " + po.color : ""} · PRE-ORDEN`;
 
-<<<<<<< HEAD
-=======
     const totalToHold = remaining;
->>>>>>> fb9041d (supermarket, line leader, engineer)
     setDropBusy(true);
     let day = new Date(startDate);
     let created = 0, heldTotal = 0, daysScanned = 0, failures = 0;
@@ -2070,18 +1891,12 @@ export default function PlanBoard({
     const capCache = {};
 
     try {
-<<<<<<< HEAD
-      while (remaining > 0 && daysScanned < MAX_DAYS && failures < MAX_FAILURES) {
-        daysScanned++;
-        if (day.getDay() === 0 || day.getDay() === 6) { day = addDays(day, 1); continue; }
-=======
       // ── Phase 1: plan the split, filling each eligible day to its full capacity.
       const plan = []; // { dateStr, lineNoExact, qty, available }
       while (remaining > 0 && daysScanned < MAX_DAYS) {
         daysScanned++;
         if (day.getDay() === 0 || day.getDay() === 6) { day = addDays(day, 1); continue; }
         if (holidayFor(lineNo, day)) { day = addDays(day, 1); continue; } // día bloqueado
->>>>>>> fb9041d (supermarket, line leader, engineer)
         const dateStr = format(day, "yyyy-MM-dd");
 
         if (!capCache[dateStr]) capCache[dateStr] = await fetchAvailableForDate(dateStr);
@@ -2091,9 +1906,6 @@ export default function PlanBoard({
         const available = Math.floor(Number(lineInfo.available_capacity) || 0);
         if (available <= 0) { skippedFull++; day = addDays(day, 1); continue; }
 
-<<<<<<< HEAD
-        const qty = Math.min(remaining, available);
-=======
         const cap = perDayCap(lineInfo, available); // split-day: at most half the day
         const qty = Math.min(remaining, cap);
         plan.push({ dateStr, lineNoExact: lineInfo.line_no, qty, available: cap });
@@ -2118,21 +1930,14 @@ export default function PlanBoard({
       for (const cell of plan) {
         if (cell.qty <= 0) continue;
         if (failures >= MAX_FAILURES) break;
->>>>>>> fb9041d (supermarket, line leader, engineer)
         const res = await fetch(`${API_URL}/api/pre-order-holds`, {
           method: "POST",
           headers: authHeaders(),
           body: JSON.stringify({
             preOrderId: po.preOrderId,
-<<<<<<< HEAD
-            lineNo: lineInfo.line_no,
-            assignedDate: dateStr,
-            quantity: qty,
-=======
             lineNo: cell.lineNoExact,
             assignedDate: cell.dateStr,
             quantity: cell.qty,
->>>>>>> fb9041d (supermarket, line leader, engineer)
             color: po.color || "",
             preOrderNo: po.work_order_no,
             customerName: po.customer_name,
@@ -2142,22 +1947,12 @@ export default function PlanBoard({
         });
         const data = await res.json();
         if (data.success) {
-<<<<<<< HEAD
-          created++; heldTotal += qty; remaining -= qty;
-          lineInfo.available_capacity = available - qty; // keep cache consistent
-          day = addDays(day, 1);
-        } else {
-          failures++; errors.push(`${dateStr}: ${data.error || res.status}`); day = addDays(day, 1);
-        }
-      }
-=======
           created++; heldTotal += cell.qty;
         } else {
           failures++; errors.push(`${cell.dateStr}: ${data.error || res.status}`);
         }
       }
       remaining = totalToHold - heldTotal;
->>>>>>> fb9041d (supermarket, line leader, engineer)
 
       await fetchData({ silent: true });
 
@@ -2185,10 +1980,7 @@ export default function PlanBoard({
 
   // Remove a single pre-order hold cell.
   const removeHold = async (a) => {
-<<<<<<< HEAD
-=======
     if (readOnly) return;
->>>>>>> fb9041d (supermarket, line leader, engineer)
     if (!a?.holdId || dropBusy) return;
     if (!window.confirm(`¿Quitar la reserva de ${a.work_order_no} en L${a.line_no} · ${ymd(a.assigned_date)}?`)) return;
     setDropBusy(true);
@@ -2224,10 +2016,7 @@ export default function PlanBoard({
   // PATCH /:id/move), so no backend change is required. The trade-off is that the
   // shift runs as a sequence of moves rather than one atomic transaction.
   const insertBalanceWithRipple = async (po, lineNo, startDate) => {
-<<<<<<< HEAD
-=======
     clearInsertUndo();
->>>>>>> fb9041d (supermarket, line leader, engineer)
     const total = po.remaining != null ? po.remaining : remainingOf(po);
     if (total <= 0) return showToast("Esta PO ya está totalmente asignada.", true);
     const label = `${po.work_order_no}${po.color ? " " + po.color : ""}`;
@@ -2445,11 +2234,6 @@ export default function PlanBoard({
   // No production on weekends: Sat/Sun are never valid assignment targets.
   const isWeekend = (date) => { const d = date.getDay(); return d === 0 || d === 6; };
 
-<<<<<<< HEAD
-  const handleDrop = (e, lineNo, date) => {
-    e.preventDefault();
-    setDropTarget(null);
-=======
   // Días festivos / paros: a day (optionally a single line) marked non-working in
   // the "Días festivos" tab. A plant-wide row (line_no == null) blocks every line;
   // a line-specific row blocks only that line. The board paints these cells and
@@ -2484,7 +2268,6 @@ export default function PlanBoard({
     e.preventDefault();
     setDropTarget(null);
     if (readOnly) return;   // consulta: el tablero no se toca
->>>>>>> fb9041d (supermarket, line leader, engineer)
     if (dropBusy) return;
 
     if (isWeekend(date)) {
@@ -2493,14 +2276,6 @@ export default function PlanBoard({
       return;
     }
 
-<<<<<<< HEAD
-    // Moving an existing assignment to another line/day.
-    if (draggedAssignment) {
-      const target = getAssignmentForLineAndDate(lineNo, date);
-      if (target && target.id === draggedAssignment.id) { setDraggedAssignment(null); return; } // dropped on itself
-      if (target) { showToast("Ese día ya está ocupado. Elija un día libre.", true); setDraggedAssignment(null); return; }
-      moveAssignment(draggedAssignment, lineNo, date);
-=======
     const hol = holidayFor(lineNo, date);
     if (hol) {
       showToast(holidayMsg(hol, date), true);
@@ -2536,7 +2311,6 @@ export default function PlanBoard({
       } else {
         moveAssignment(draggedAssignment, lineNo, date);
       }
->>>>>>> fb9041d (supermarket, line leader, engineer)
       return;
     }
 
@@ -2549,10 +2323,7 @@ export default function PlanBoard({
 
   // Relocate one assignment to a new line/day.
   const moveAssignment = async (assignment, lineNo, date) => {
-<<<<<<< HEAD
-=======
     clearInsertUndo();
->>>>>>> fb9041d (supermarket, line leader, engineer)
     setDropBusy(true);
     try {
       const res = await fetch(`${API_URL}/api/line-assignments/${assignment.id}/move`, {
@@ -2577,8 +2348,6 @@ export default function PlanBoard({
     }
   };
 
-<<<<<<< HEAD
-=======
   // Insert a moved order onto an OCCUPIED day and push the whole line tail one
   // workday forward. The server does the ripple atomically (all-or-nothing);
   // used instead of a plain move when the drop lands on a day that already has
@@ -2723,15 +2492,10 @@ export default function PlanBoard({
     }
   };
 
->>>>>>> fb9041d (supermarket, line leader, engineer)
   // ---- multi-cell selection ---------------------------------------------
   const exitSelectMode = () => {
     setSelectMode(false);
     setPickingDest(false);
-<<<<<<< HEAD
-    setSelectedIds(new Set());
-  };
-=======
     setInsertMode(false);
     setSelectedIds(new Set());
     // NOTE: intentionally does NOT touch lastInsertUndo — after an insert we exit
@@ -2740,7 +2504,6 @@ export default function PlanBoard({
   // Any OTHER board mutation invalidates a pending insert-undo (it only knows how
   // to reverse the last insert against the state it left behind).
   const clearInsertUndo = () => setLastInsertUndo(null);
->>>>>>> fb9041d (supermarket, line leader, engineer)
   const toggleSelected = (id) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -2748,17 +2511,6 @@ export default function PlanBoard({
       return next;
     });
   };
-<<<<<<< HEAD
-  // Pile every selected block into the target line/day and re-pack forward.
-  const batchMove = async (ids, lineNo, date) => {
-    if (!ids.length || dropBusy) return;
-    setDropBusy(true);
-    try {
-      const res = await fetch(`${API_URL}/api/line-assignments/move-batch`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ ids, lineNo, assignedDate: format(date, "yyyy-MM-dd") }),
-=======
   // A selected id is either a real line_assignment id (numeric / numeric string)
   // or a PRE#### hold cell, which is keyed "hold:<id>" so the two never collide
   // in selectedIds. This lets a single selection hold both kinds; each batch
@@ -2945,21 +2697,11 @@ export default function PlanBoard({
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({ ids: assignIds, lineNo, assignedDate: format(date, "yyyy-MM-dd") }),
->>>>>>> fb9041d (supermarket, line leader, engineer)
       });
       const data = await res.json();
       if (data.success) {
         await fetchData({ silent: true });
         balances.reload({ silent: true });
-<<<<<<< HEAD
-        showToast(`✅ ${ids.length} casilla(s) movida(s) a Línea ${lineNo} · ${format(date, "dd/MM")}`);
-        exitSelectMode();
-      } else {
-        showToast(data.error || "No se pudieron mover las casillas", true);
-      }
-    } catch (err) {
-      showToast(`Error al mover: ${err.message}`, true);
-=======
         setLastInsertUndo(data.undo || null);
         const shifted = data.shifted || 0;
         showToast(
@@ -2999,7 +2741,6 @@ export default function PlanBoard({
       }
     } catch (err) {
       showToast(`Error al deshacer: ${err.message}`, true);
->>>>>>> fb9041d (supermarket, line leader, engineer)
     } finally {
       setDropBusy(false);
     }
@@ -3009,28 +2750,20 @@ export default function PlanBoard({
       showToast("No se puede mover a un fin de semana. Elija un día entre semana.", true);
       return;
     }
-<<<<<<< HEAD
-    batchMove([...selectedIds], lineNo, date);
-=======
     const hol = holidayFor(lineNo, date);
     if (hol) { showToast(holidayMsg(hol, date), true); return; }
     if (insertMode) batchInsertShift([...selectedIds], lineNo, date);
     else batchMove([...selectedIds], lineNo, date);
->>>>>>> fb9041d (supermarket, line leader, engineer)
   };
   // Delete ONLY the cells the user checked. Past (locked) cells are dropped and
   // reported; removeAssignments enforces the same lock as a second guard.
   const deleteSelected = async () => {
-<<<<<<< HEAD
-    const selObjs = assignments.filter((a) => selectedIds.has(a.id));
-=======
     if (readOnly) return;
     clearInsertUndo();
     const selObjs = [
       ...assignments.filter((a) => selectedIds.has(a.id)),
       ...holdRows.filter((h) => selectedIds.has(h.id)),
     ];
->>>>>>> fb9041d (supermarket, line leader, engineer)
     if (!selObjs.length || dropBusy) return;
     const deletable = selObjs.filter((a) => !isLockedCell(a));
     if (deletable.length === 0) {
@@ -3039,10 +2772,6 @@ export default function PlanBoard({
     }
     const lockedN = selObjs.length - deletable.length;
     if (!window.confirm(`¿Eliminar ${deletable.length} casilla(s) seleccionada(s)?${lockedN > 0 ? ` (${lockedN} de días pasados se conservan)` : ""}`)) return;
-<<<<<<< HEAD
-    await removeAssignments(deletable.map((a) => a.id));
-    exitSelectMode();
-=======
     const delHolds = deletable.filter((a) => a.is_hold);   // pre-order reservations
     const delAssigns = deletable.filter((a) => !a.is_hold); // real line_assignments
     setDropBusy(true);
@@ -3143,16 +2872,12 @@ export default function PlanBoard({
     if (!window.confirm(`¿Enviar ${assignIds.length} casilla(s) a los líderes de línea?${note}`)) return;
     const ok = await confirmAssignments(assignIds);
     if (ok) exitSelectMode();
->>>>>>> fb9041d (supermarket, line leader, engineer)
   };
 
   // Tap a cell: in select mode it either destination-picks; while armed it packs
   // a pool PO here; otherwise individual blocks open their own detail on click.
   const handleCellClick = (lineNo, date) => {
-<<<<<<< HEAD
-=======
     if (readOnly) return;   // consulta: el tablero no se toca
->>>>>>> fb9041d (supermarket, line leader, engineer)
     if (selectMode) {
       if (pickingDest) chooseDestination(lineNo, date); // chooseDestination guards weekends
       return; // selecting phase: empty cells do nothing
@@ -3162,11 +2887,8 @@ export default function PlanBoard({
         showToast("No se puede asignar en fin de semana. Elija un día entre semana.", true);
         return;
       }
-<<<<<<< HEAD
-=======
       const hol = holidayFor(lineNo, date);
       if (hol) { showToast(holidayMsg(hol, date), true); return; }
->>>>>>> fb9041d (supermarket, line leader, engineer)
       assignPOAcrossDays(armedPO, lineNo, date);
     }
   };
@@ -3174,10 +2896,7 @@ export default function PlanBoard({
   // Remove one or more assignments from a line.
   const removeAssignments = async (ids) => {
     if (!ids || ids.length === 0) return;
-<<<<<<< HEAD
-=======
     clearInsertUndo();
->>>>>>> fb9041d (supermarket, line leader, engineer)
     // Never delete locked (past) cells: the old assigned quantity is history.
     const byId = new Map(assignments.map((a) => [a.id, a]));
     const lockedCount = ids.filter((id) => isLockedCell(byId.get(id))).length;
@@ -3352,10 +3071,6 @@ export default function PlanBoard({
       <div className="px-5 py-4 border-b bg-gradient-to-r from-gray-50 to-white">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-<<<<<<< HEAD
-            <h2 className="font-semibold text-gray-900 text-lg">Plan Board</h2>
-            <p className="text-sm text-gray-600">Arrastre una orden del panel izquierdo a una casilla de la línea —o tóquela y luego toque la casilla— para programarla</p>
-=======
             <h2 className="font-semibold text-gray-900 text-lg flex items-center gap-2">
               {heading || "Plan Board"}
               {readOnly && (
@@ -3370,7 +3085,6 @@ export default function PlanBoard({
                   ? "Plan publicado por planeación. Se actualiza cuando planeación vuelve a enviar la semana."
                   : "Arrastre una orden del panel izquierdo a una casilla de la línea —o tóquela y luego toque la casilla— para programarla")}
             </p>
->>>>>>> fb9041d (supermarket, line leader, engineer)
           </div>
           <div className="flex items-center gap-2">
             <label
@@ -3389,20 +3103,13 @@ export default function PlanBoard({
                 — Año no, porque sería un mar de columnas vacías. Las columnas de
                 Semanal/Mensual salen de las semanas publicadas (ver `periods`). */}
             <div className="flex bg-gray-100 rounded-lg p-1">
-<<<<<<< HEAD
-              {["day", "week", "month", "year"].map((m) => (
-=======
               {(restrictWeeks ? ["day", "week", "month"] : ["day", "week", "month", "year"]).map((m) => (
->>>>>>> fb9041d (supermarket, line leader, engineer)
                 <button key={m} onClick={() => setViewMode(m)}
                   className={`px-3 py-1.5 text-sm rounded-md transition ${viewMode === m ? "bg-white shadow-sm text-gray-900" : "text-gray-600 hover:text-gray-800"}`}>
                   {m === "day" ? "Diario" : m === "week" ? "Semanal" : m === "month" ? "Mensual" : "Año"}
                 </button>
               ))}
             </div>
-<<<<<<< HEAD
-            <button onClick={goToday} className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Hoy</button>
-=======
             {!readOnly && (
               <button
                 onClick={() => setSplitDay((v) => !v)}
@@ -3426,7 +3133,6 @@ export default function PlanBoard({
               </button>
             )}
             {!readOnly && (
->>>>>>> fb9041d (supermarket, line leader, engineer)
             <button
               onClick={() => setAddLine({ lineNo: "", operators: "", hours: "", effPct: "", sam: "" })}
               className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
@@ -3434,10 +3140,7 @@ export default function PlanBoard({
             >
               + Línea
             </button>
-<<<<<<< HEAD
-=======
             )}
->>>>>>> fb9041d (supermarket, line leader, engineer)
             {lineOrder.length > 0 && (
               <button
                 onClick={resetLineOrder}
@@ -3447,11 +3150,7 @@ export default function PlanBoard({
                 Restablecer orden
               </button>
             )}
-<<<<<<< HEAD
-            {viewMode === "day" && (
-=======
             {viewMode === "day" && !readOnly && (
->>>>>>> fb9041d (supermarket, line leader, engineer)
               <button
                 onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
                 className={`px-3 py-1.5 text-sm rounded-lg transition ${selectMode ? "bg-indigo-600 text-white hover:bg-indigo-700" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
@@ -3459,12 +3158,6 @@ export default function PlanBoard({
                 {selectMode ? "Selección: ON" : "Seleccionar"}
               </button>
             )}
-<<<<<<< HEAD
-            <div className="flex gap-1">
-              <button onClick={goPrevious} className="p-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"><ChevronLeft className="w-4 h-4" /></button>
-              <button onClick={goNext} className="p-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"><ChevronRight className="w-4 h-4" /></button>
-            </div>
-=======
             {/* Con semanas fijas no hay a dónde navegar: el rango ES lo publicado. */}
             {!restrictWeeks && (
               <div className="flex gap-1">
@@ -3472,19 +3165,11 @@ export default function PlanBoard({
                 <button onClick={goNext} className="p-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"><ChevronRight className="w-4 h-4" /></button>
               </div>
             )}
->>>>>>> fb9041d (supermarket, line leader, engineer)
           </div>
         </div>
         <div className="mt-3 text-sm text-gray-500">
           {viewMode === "day" && dateRange.length > 0 && `${format(dateRange[0], "d MMM", { locale: es })} – ${format(dateRange[dateRange.length - 1], "d MMM yyyy", { locale: es })}`}
           {viewMode === "week" && periods.length > 0 && `${format(new Date(`${periods[0].start}T00:00:00`), "d MMM")} – ${format(new Date(`${periods[periods.length - 1].end}T00:00:00`), "d MMM yyyy")}`}
-<<<<<<< HEAD
-          {viewMode === "month" && format(currentDate, "yyyy")}
-          {viewMode === "year" && periods.length > 0 && `${periods[0].bottom} – ${periods[periods.length - 1].bottom}`}
-        </div>
-      </div>
-
-=======
           {viewMode === "month" && (
             // Con semanas publicadas el año sale de las columnas reales, no de
             // currentDate (que podría ser de otro año que el publicado).
@@ -3497,7 +3182,6 @@ export default function PlanBoard({
           {viewMode === "year" && periods.length > 0 && `${periods[0].bottom} – ${periods[periods.length - 1].bottom}`}
         </div>
       </div>
->>>>>>> fb9041d (supermarket, line leader, engineer)
 
 
       {/* Armed-PO hint */}
@@ -3517,37 +3201,23 @@ export default function PlanBoard({
 
       {/* Multi-cell selection bar */}
       {selectMode && (
-<<<<<<< HEAD
-        <div className="sticky top-0 z-40 px-5 py-2 bg-indigo-50 border-b border-indigo-200 text-sm text-indigo-900 flex items-center gap-3">
-          {!pickingDest ? (
-            <>
-              <span className="truncate">
-                <b>{selectedIds.size}</b> casilla(s) seleccionada(s) — toque los bloques para marcar (cualquier línea), luego Mover o Eliminar.
-=======
         <div className={`sticky top-0 z-40 px-5 py-2 border-b text-sm flex items-center gap-3 ${pickingDest && insertMode ? "bg-fuchsia-50 border-fuchsia-200 text-fuchsia-900" : "bg-indigo-50 border-indigo-200 text-indigo-900"}`}>
           {!pickingDest ? (
             <>
               <span className="truncate">
                 <b>{selectedIds.size}</b> casilla(s) seleccionada(s) — toque los bloques (POs o reservas PRE) para marcar, luego Mover, Insertar, Enviar a líderes o Eliminar. Las reservas se omiten al enviar a líderes e insertar.
->>>>>>> fb9041d (supermarket, line leader, engineer)
               </span>
               <div className="ml-auto shrink-0 flex items-center gap-2">
                 <button
                   disabled={selectedIds.size === 0 || dropBusy}
-<<<<<<< HEAD
-                  onClick={() => setPickingDest(true)}
-=======
                   onClick={() => { setInsertMode(false); setPickingDest(true); }}
                   title="Reacomoda la selección en la celda destino, empacando día por día."
->>>>>>> fb9041d (supermarket, line leader, engineer)
                   className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40"
                 >
                   Mover…
                 </button>
                 <button
                   disabled={selectedIds.size === 0 || dropBusy}
-<<<<<<< HEAD
-=======
                   onClick={() => { setInsertMode(true); setPickingDest(true); }}
                   title="Inserta la selección en la celda destino y recorre el resto de la línea hacia adelante."
                   className="px-3 py-1.5 rounded-lg bg-fuchsia-600 text-white hover:bg-fuchsia-700 disabled:opacity-40"
@@ -3564,7 +3234,6 @@ export default function PlanBoard({
                 </button>
                 <button
                   disabled={selectedIds.size === 0 || dropBusy}
->>>>>>> fb9041d (supermarket, line leader, engineer)
                   onClick={deleteSelected}
                   className="px-3 py-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-40"
                 >
@@ -3586,13 +3255,9 @@ export default function PlanBoard({
             <>
               <span className="truncate">
                 {dropBusy ? (
-<<<<<<< HEAD
-                  <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Moviendo…</span>
-=======
                   <span className="inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> {insertMode ? "Insertando…" : "Moviendo…"}</span>
                 ) : insertMode ? (
                   <>Toque la casilla <b>destino</b> — las <b>{selectedIds.size}</b> orden(es) se <b>insertan</b> ahí y el resto de la línea se recorre hacia adelante.</>
->>>>>>> fb9041d (supermarket, line leader, engineer)
                 ) : (
                   <>Toque la casilla <b>destino</b> — las <b>{selectedIds.size}</b> casilla(s) se reacomodan ahí día por día.</>
                 )}
@@ -3600,11 +3265,7 @@ export default function PlanBoard({
               <div className="ml-auto shrink-0 flex items-center gap-2">
                 <button
                   disabled={dropBusy}
-<<<<<<< HEAD
-                  onClick={() => setPickingDest(false)}
-=======
                   onClick={() => { setPickingDest(false); setInsertMode(false); }}
->>>>>>> fb9041d (supermarket, line leader, engineer)
                   className="px-3 py-1.5 rounded-lg text-indigo-600 hover:underline disabled:opacity-40"
                 >
                   Cancelar
@@ -3621,11 +3282,7 @@ export default function PlanBoard({
       {/* Pool: orders the MERCHANT planned, laid out as compact per-week columns
           so the planner sees the weeks AND the line grid at the same time.
           Assigning/dragging only in Diario. */}
-<<<<<<< HEAD
-      {viewMode === "day" && (
-=======
       {viewMode === "day" && !readOnly && (
->>>>>>> fb9041d (supermarket, line leader, engineer)
       <div className="h-full w-[300px] shrink-0 flex flex-col border-r border-amber-200 bg-amber-50/40">
         {/* Header row — title collapses the pool; controls stay on the right */}
         <div className="w-full flex items-center justify-between px-4 py-2.5 gap-2 border-b border-amber-200 bg-amber-100/40 shrink-0">
@@ -3882,20 +3539,13 @@ export default function PlanBoard({
             <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide sticky left-0 z-30 bg-white pr-2 self-stretch flex items-end border-r border-gray-200 shadow-[6px_0_0_0_#ffffff,4px_0_6px_-3px_rgba(0,0,0,0.18)]">Línea</div>
             {dateRange.map((date, idx) => {
               const isToday = isSameDay(date, new Date());
-<<<<<<< HEAD
-=======
               const plantHol = holidayIndex.plant.get(format(date, "yyyy-MM-dd")); // toda la planta
->>>>>>> fb9041d (supermarket, line leader, engineer)
               // With weekends hidden the 1st may not be a visible column, so a
               // month starts wherever the month changes from the previous cell.
               const prev = idx > 0 ? dateRange[idx - 1] : null;
               const monthStart = idx === 0 || !prev || prev.getMonth() !== date.getMonth() || prev.getFullYear() !== date.getFullYear();
               return (
-<<<<<<< HEAD
-                <div key={idx} className={`relative text-center leading-tight ${monthStart && idx !== 0 ? "border-l border-gray-300" : ""} text-gray-500`} style={{ width: CELL }}>
-=======
                 <div key={idx} className={`relative text-center leading-tight ${monthStart && idx !== 0 ? "border-l border-gray-300" : ""} text-gray-500`} style={{ width: CELL_W }}>
->>>>>>> fb9041d (supermarket, line leader, engineer)
                   {monthStart && (
                     <div className="text-[8px] font-bold uppercase tracking-wide text-indigo-500 leading-none">{format(date, "MMM", { locale: es })}</div>
                   )}
@@ -3906,20 +3556,12 @@ export default function PlanBoard({
                     </div>
                   )}
                   <div className="text-[9px] uppercase leading-none mb-0.5">{format(date, "EEEEE", { locale: es })}</div>
-<<<<<<< HEAD
-                  <div className={`text-[11px] font-semibold mx-auto ${isToday ? "text-white bg-blue-600 rounded-full w-[18px] h-[18px] flex items-center justify-center" : "text-gray-700"}`}>{format(date, "d")}</div>
-=======
                   <div className={`text-[11px] font-semibold mx-auto ${isToday ? "text-white bg-blue-600 rounded-full w-[18px] h-[18px] flex items-center justify-center" : plantHol ? "text-amber-700" : "text-gray-700"}`} title={plantHol ? (plantHol.name || "Día no laborable") : undefined}>{format(date, "d")}</div>
->>>>>>> fb9041d (supermarket, line leader, engineer)
                   {/* Debajo de la fecha: asignado (gris) y producido (verde) del día, todas las líneas. */}
                   {(() => {
                     const k = format(date, "yyyy-MM-dd");
                     const asg = assignedByDay.get(k) || 0;
                     const prod = producedByDay.get(k) || 0;
-<<<<<<< HEAD
-                    return (
-                      <div className="mt-0.5 leading-none">
-=======
                     const eq = eqByDay.get(k) || 0;
                     return (
                       <div className="mt-0.5 leading-none">
@@ -3928,7 +3570,6 @@ export default function PlanBoard({
                             {compactN(eq)}
                           </div>
                         )}
->>>>>>> fb9041d (supermarket, line leader, engineer)
                         <div className={`text-[8px] font-semibold tabular-nums ${asg > 0 ? "text-slate-600" : "text-gray-300"}`} title={`Asignado: ${Math.round(asg).toLocaleString()} pzas`}>
                           {asg > 0 ? compactN(asg) : "·"}
                         </div>
@@ -3982,11 +3623,6 @@ export default function PlanBoard({
                   const monthStart = idx !== 0 && (!prevDate || prevDate.getMonth() !== date.getMonth() || prevDate.getFullYear() !== date.getFullYear());
                   const dateKey = `${lineNo}|${format(date, "yyyy-MM-dd")}`;
                   const moving = draggedAssignment != null;
-<<<<<<< HEAD
-                  // A move needs an empty target; a pool PO can pack into any cell.
-                  // (Weekends are hidden from the day view, so every column is a workday.)
-                  const canDrop = moving ? !hasAny : !!activePO;
-=======
                   // During any move (PO or pre-order hold) every workday cell is a
                   // valid drop target: an empty cell is a plain move, an occupied
                   // cell inserts the order and shifts that line's tail forward one
@@ -3996,18 +3632,13 @@ export default function PlanBoard({
                   // placed before the day was blocked still stands out as a conflict).
                   const holiday = holidayFor(lineNo, date);
                   const canDrop = holiday ? false : (moving ? true : !!activePO);
->>>>>>> fb9041d (supermarket, line leader, engineer)
                   const isDropHover = dropTarget === dateKey && canDrop;
                   const dayStr = format(date, "yyyy-MM-dd");
                   const totalQty = cellAssignments.reduce((s, a) => s + (parseFloat(a.assigned_quantity) || 0), 0);
 
-<<<<<<< HEAD
-                  const emptyCls = `border ${monthStart ? "border-l-2 border-l-gray-300 " : ""}${isToday ? "border-blue-300 bg-blue-50 ring-1 ring-inset ring-blue-200" : "border-gray-200/80 bg-gray-50"}`;
-=======
                   const emptyCls = holiday
                     ? `border ${monthStart ? "border-l-2 border-l-gray-300 " : ""}border-amber-300 bg-amber-50`
                     : `border ${monthStart ? "border-l-2 border-l-gray-300 " : ""}${isToday ? "border-blue-300 bg-blue-50 ring-1 ring-inset ring-blue-200" : "border-gray-200/80 bg-gray-50"}`;
->>>>>>> fb9041d (supermarket, line leader, engineer)
 
                   return (
                     <div
@@ -4016,11 +3647,6 @@ export default function PlanBoard({
                       onDragLeave={() => setDropTarget((t) => (t === dateKey ? null : t))}
                       onDrop={(e) => handleDrop(e, lineNo, date)}
                       onClick={() => handleCellClick(lineNo, date)}
-<<<<<<< HEAD
-                      style={{ width: CELL, height: CELL }}
-                      className={`relative rounded-md overflow-hidden transition ${hasAny ? "" : emptyCls} ${isDropHover ? "ring-2 ring-amber-400 bg-amber-100" : ""} ${activePO && !hasAny ? "ring-1 ring-inset ring-amber-300/70 " : ""}${canDrop && !hasAny ? "cursor-pointer hover:ring-2 hover:ring-amber-300" : ""} ${selectMode && pickingDest ? "cursor-pointer hover:ring-2 hover:ring-indigo-500" : ""}`}
-                    >
-=======
                       style={{ width: CELL_W, height: CELL_H }}
                       title={holiday ? `${holiday.name || "Día no laborable"}${holiday.line_no ? ` · Línea ${holiday.line_no}` : " · toda la planta"}` : undefined}
                       className={`relative rounded-md overflow-hidden transition ${hasAny ? "" : emptyCls} ${isDropHover ? "ring-2 ring-amber-400 bg-amber-100" : ""} ${!holiday && activePO && !hasAny ? "ring-1 ring-inset ring-amber-300/70 " : ""}${canDrop && !hasAny ? "cursor-pointer hover:ring-2 hover:ring-amber-300" : ""} ${holiday ? "cursor-not-allowed" : ""} ${!holiday && selectMode && pickingDest ? (insertMode ? "cursor-pointer hover:ring-2 hover:ring-fuchsia-500" : "cursor-pointer hover:ring-2 hover:ring-indigo-500") : ""}`}
@@ -4034,7 +3660,6 @@ export default function PlanBoard({
                           }}
                         />
                       )}
->>>>>>> fb9041d (supermarket, line leader, engineer)
                       {hasAny && (
                         <div className="absolute inset-0 flex flex-col">
                           {cellAssignments.map((a) => {
@@ -4055,32 +3680,18 @@ export default function PlanBoard({
                             // Alto real de esta rebanada (px). Con varias OT en el
                             // mismo dia la celda se parte, y el sello "PRE" solo
                             // cabe si la rebanada tiene altura suficiente.
-<<<<<<< HEAD
-                            const slicePx = share * CELL;
-                            return (
-                              <div
-                                key={a.id}
-                                draggable={!dropBusy && !selectMode && !a.is_hold}
-                                onDragStart={(e) => {
-                                  if (a.is_hold) { e.preventDefault(); return; } // holds don't move via line-assignments
-=======
                             const slicePx = share * CELL_H;
                             return (
                               <div
                                 key={a.id}
                                 draggable={!dropBusy && !selectMode}
                                 onDragStart={(e) => {
->>>>>>> fb9041d (supermarket, line leader, engineer)
                                   e.stopPropagation();
                                   e.dataTransfer.effectAllowed = "move";
                                   e.dataTransfer.setData("text/plain", String(a.id));
                                   setDraggedPO(null);
                                   setArmedPO(null);
-<<<<<<< HEAD
-                                  setDraggedAssignment(a);
-=======
                                   setDraggedAssignment(a); // may be a hold (a.is_hold); handleDrop routes it to moveHold
->>>>>>> fb9041d (supermarket, line leader, engineer)
                                 }}
                                 onDragEnd={() => { setDraggedAssignment(null); setDropTarget(null); }}
                                 onClick={(e) => {
@@ -4089,11 +3700,7 @@ export default function PlanBoard({
                                     // In dest phase, a tap on any cell (even an
                                     // occupied one) picks it as the target.
                                     if (pickingDest) chooseDestination(lineNo, date);
-<<<<<<< HEAD
-                                    else if (!a.is_hold) toggleSelected(a.id); // holds aren't batch-movable
-=======
                                     else toggleSelected(a.id); // POs and PRE#### holds both select; routed per-type on Mover/Enviar/Eliminar
->>>>>>> fb9041d (supermarket, line leader, engineer)
                                     return;
                                   }
                                   // An armed PO packs onto this cell even over a hold.
@@ -4119,11 +3726,7 @@ export default function PlanBoard({
                                 {preO && (
                                   <>
                                     <span className="pointer-events-none absolute inset-0 z-20 rounded-[3px] border-[1.5px] border-dashed border-violet-700" />
-<<<<<<< HEAD
-                                    {slicePx >= 9 ? (
-=======
                                     {slicePx >= 9 && !cellDetails ? (
->>>>>>> fb9041d (supermarket, line leader, engineer)
                                       <span className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
                                         <span className="rounded-[2px] bg-violet-700 px-[2px] font-black leading-none text-white" style={{ fontSize: 6 }}>PRE</span>
                                       </span>
@@ -4133,8 +3736,6 @@ export default function PlanBoard({
                                   </>
                                 )}
                                 {isStart && <span className="absolute inset-y-0 left-0 w-1 bg-black/25" />}
-<<<<<<< HEAD
-=======
                                 {/* Etiqueta legible en la casilla (supermercado):
                                     OT + PO cliente + cantidad asignada. Un panel
                                     casi blanco sobre el color del bloque mantiene
@@ -4170,7 +3771,6 @@ export default function PlanBoard({
                                     )}
                                   </div>
                                 )}
->>>>>>> fb9041d (supermarket, line leader, engineer)
                                 {(() => {
                                   // Esquina verde: la celda se cerro automaticamente porque
                                   // la linea alcanzo (o supero) lo asignado ese dia.
@@ -4224,23 +3824,17 @@ export default function PlanBoard({
                 <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide sticky left-0 z-30 bg-white pr-2 self-stretch flex items-end border-r border-gray-200 shadow-[6px_0_0_0_#ffffff,4px_0_6px_-3px_rgba(0,0,0,0.18)]">Línea</div>
                 {periods.map((p) => {
                   const { assigned, produced } = columnTotals(p.start, p.end);
-<<<<<<< HEAD
-=======
                   const eq = columnEq(p.start, p.end);
->>>>>>> fb9041d (supermarket, line leader, engineer)
                   return (
                     <div key={p.key} className="text-center leading-tight text-gray-500" style={{ width: AGG_W }}>
                       <div className="text-[9px] uppercase">{p.top}</div>
                       <div className="text-[10px] font-semibold text-gray-700">{p.bottom}</div>
-<<<<<<< HEAD
-=======
                       {/* Piezas equivalentes (azul) — carga normalizada como en el merchant. */}
                       {eq > 0 && (
                         <div className="text-[9px] font-mono font-semibold tabular-nums text-blue-600" title={`Carga equivalente: ${Math.round(eq).toLocaleString()} pzas eq`}>
                           {Math.round(eq).toLocaleString()} eq
                         </div>
                       )}
->>>>>>> fb9041d (supermarket, line leader, engineer)
                       {/* Asignado (gris) y producido (verde) del periodo, todas las líneas. */}
                       <div className="text-[9px] font-semibold tabular-nums text-slate-600" title={`Asignado: ${Math.round(assigned).toLocaleString()} pzas`}>
                         {assigned > 0 ? Math.round(assigned).toLocaleString() : "·"}
@@ -4282,11 +3876,7 @@ export default function PlanBoard({
                     </button>
 
                     {periods.map((p) => {
-<<<<<<< HEAD
-                      const { total, orders, hasPre } = aggFor(lineNo, p.start, p.end);
-=======
                       const { total, orders, hasPre, preQty } = aggFor(lineNo, p.start, p.end);
->>>>>>> fb9041d (supermarket, line leader, engineer)
                       const has = total > 0;
                       const cap = periodCapacity(lineNo, p.start, p.end);
                       const util = cap > 0 ? total / cap : null;       // null → capacity unknown
@@ -4296,20 +3886,12 @@ export default function PlanBoard({
                       else if (has) { cellStyle.backgroundColor = "rgba(100,116,139,0.18)"; cellStyle.borderColor = "#94a3b8"; cellStyle.color = "#334155"; }
                       if (hasPre) { cellStyle.outline = "2px dashed #6d28d9"; cellStyle.outlineOffset = "-2px"; }
                       const pctTxt = util != null ? `${Math.round(util * 100)}% de capacidad` : "sin capacidad configurada";
-<<<<<<< HEAD
-                      return (
-                        <button
-                          key={p.key}
-                          onClick={() => has && setAggModal({ lineNo, label: `${p.top} ${p.bottom}`, orders, total })}
-                          title={has ? `${orders.length} orden(es) · ${Math.round(total).toLocaleString()} pzas · ${pctTxt}${hasPre ? " · incluye PRE-ORDEN" : ""}` : "Sin asignaciones"}
-=======
                       const preTxt = hasPre ? ` · incluye ${Math.round(preQty).toLocaleString()} pzas PRE-ORDEN` : "";
                       return (
                         <button
                           key={p.key}
                           onClick={() => has && setAggModal({ lineNo, label: `${p.top} ${p.bottom}`, orders, total, preQty })}
                           title={has ? `${orders.length} orden(es) · ${Math.round(total).toLocaleString()} pzas · ${pctTxt}${preTxt}` : "Sin asignaciones"}
->>>>>>> fb9041d (supermarket, line leader, engineer)
                           style={cellStyle}
                           className={`relative rounded-md border text-[11px] font-semibold flex items-center justify-center transition ${
                             has ? "hover:ring-2 hover:ring-black/10" : "border-gray-200 bg-gray-100 text-gray-300"
@@ -4431,13 +4013,10 @@ export default function PlanBoard({
             <span className="text-gray-600">Completada (atenuada)</span>
           </div>
           <div className="flex items-center gap-1.5">
-<<<<<<< HEAD
-=======
             <span className="text-[11px] font-mono font-semibold text-blue-600 tabular-nums">000 eq</span>
             <span className="text-gray-600">Piezas equivalentes asignadas (bajo la fecha)</span>
           </div>
           <div className="flex items-center gap-1.5">
->>>>>>> fb9041d (supermarket, line leader, engineer)
             <span className="text-[11px] font-semibold text-slate-600 tabular-nums">000</span>
             <span className="text-gray-600">Asignado (bajo la fecha)</span>
           </div>
@@ -4635,12 +4214,9 @@ export default function PlanBoard({
                 const dayLabel = sel.assigned_date
                   ? fmtDMY(sel.assigned_date).slice(0, 5)
                   : fmtDMY(sel.planned_start_date).slice(0, 5);
-<<<<<<< HEAD
-=======
                 // Cells of this order/line from today onward — the ones we can
                 // still push to the line leaders.
                 const confirmableOfOrder = sameOrderOnLine.filter((a) => !isLockedCell(a));
->>>>>>> fb9041d (supermarket, line leader, engineer)
                 return (
                   <div className="flex flex-wrap gap-2">
                     {confirmableOfOrder.length > 0 && (
@@ -4689,214 +4265,6 @@ export default function PlanBoard({
                 );
               })()}
               <button onClick={() => setSelectedAssignment(null)} className="px-3 py-1.5 text-[12px] bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Cerrar</button>
-<<<<<<< HEAD
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Operators editor — only the styles assigned to this line on the chosen day */}
-      {editLine && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditLine(null)}>
-          {(() => {
-            const dayRows = stylesAssignedOnDay(editLine.lineNo, editLine.effDate);
-            return (
-              <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-                <div className="px-6 py-4 border-b">
-                  <h3 className="font-semibold text-gray-900">Operarios — Línea {editLine.lineNo}</h3>
-                  <p className="text-sm text-gray-500">Estilos asignados en el día seleccionado</p>
-                </div>
-                <div className="p-6 space-y-4 overflow-y-auto">
-                  <div className="rounded-xl bg-gray-50 border border-gray-200 p-4 space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Día</label>
-                      <input
-                        type="date"
-                        value={editLine.effDate}
-                        onChange={(e) => setEditDate(e.target.value)}
-                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setEditLine((s) => (s ? { ...s, scope: "from" } : s))}
-                        className={`flex-1 px-3 py-1.5 text-xs rounded-lg border transition ${editLine.scope === "from" ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"}`}
-                      >
-                        Desde esta fecha
-                      </button>
-                      <button
-                        onClick={() => setEditLine((s) => (s ? { ...s, scope: "day" } : s))}
-                        className={`flex-1 px-3 py-1.5 text-xs rounded-lg border transition ${editLine.scope === "day" ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"}`}
-                      >
-                        Solo este día
-                      </button>
-                    </div>
-                  </div>
-
-                  {dayRows.length === 0 ? (
-                    <p className="text-sm text-gray-500">
-                      No hay estilos asignados a la Línea {editLine.lineNo} el {editLine.effDate}. Elija otro día.
-                    </p>
-                  ) : (
-                    <>
-                      {dayRows.map((row) => {
-                        const val = editLine.ops[row.style] ?? "0";
-                        const ops = parseInt(val) || 0;
-                        const { availableMin, pcs } = previewCapacity(row.run, ops);
-                        return (
-                          <div key={row.style} className="rounded-xl border border-gray-200 p-4 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-medium text-gray-500">Estilo</span>
-                              <span className="font-mono text-sm font-semibold text-gray-900">{row.style || "—"}</span>
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">N° de operarios (costureras)</label>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => setRowOperators(row.style, String(Math.max(0, (parseInt(val) || 0) - 1)))}
-                                  className="w-9 h-9 rounded-lg border border-gray-200 text-lg hover:bg-gray-50"
-                                >−</button>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={val}
-                                  onChange={(e) => setRowOperators(row.style, e.target.value)}
-                                  className="w-full text-center rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
-                                />
-                                <button
-                                  onClick={() => setRowOperators(row.style, String((parseInt(val) || 0) + 1))}
-                                  className="w-9 h-9 rounded-lg border border-gray-200 text-lg hover:bg-gray-50"
-                                >+</button>
-                              </div>
-                            </div>
-                            {row.run ? (
-                              <div className="bg-blue-50 rounded-lg p-3 text-xs space-y-1">
-                                <div className="flex justify-between"><span className="text-blue-700">Horas:</span><span className="font-medium text-blue-900">{Number(row.run.working_hours)} h</span></div>
-                                <div className="flex justify-between"><span className="text-blue-700">Eficiencia:</span><span className="font-medium text-blue-900">{Math.round(Number(row.run.efficiency) * 100)}%</span></div>
-                                {(() => {
-                                  const m = merchantSamForStyle(row.style);
-                                  return (
-                                    <>
-                                      <div className="flex justify-between"><span className="text-blue-700">SAM estilo (merchant):</span><span className="font-medium text-blue-900">{m ? `${m.sam} min` : "—"}</span></div>
-                                      <div className="flex justify-between"><span className="text-blue-700">SAM producción:</span><span className="font-medium text-blue-900">{Number(row.run.sam_minutes)} min</span></div>
-                                    </>
-                                  );
-                                })()}
-                                <div className="flex justify-between pt-1 border-t border-blue-200"><span className="text-blue-700">Min disponibles/día:</span><span className="font-semibold text-blue-900">{Math.round(availableMin).toLocaleString()}</span></div>
-                                <div className="flex justify-between"><span className="text-blue-700">Capacidad/día:</span><span className="font-semibold text-blue-900">{Math.round(pcs).toLocaleString()} pzas</span></div>
-                              </div>
-                            ) : (
-                              <p className="text-[11px] text-amber-600">Sin corrida configurada para este estilo; no hay SAM/horas para calcular capacidad.</p>
-                            )}
-                          </div>
-                        );
-                      })}
-                      <p className="text-[11px] text-gray-400">
-                        {editLine.scope === "day"
-                          ? `El cambio se aplica solo al ${editLine.effDate} en la Línea ${editLine.lineNo} con ese estilo.`
-                          : `El cambio se aplica desde el ${editLine.effDate} en adelante en la Línea ${editLine.lineNo} con ese estilo. No modifica fechas anteriores.`}
-                      </p>
-                    </>
-                  )}
-                </div>
-                <div className="px-6 py-4 border-t flex justify-end gap-2">
-                  <button onClick={() => setEditLine(null)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Cancelar</button>
-                  <button
-                    onClick={saveOperators}
-                    disabled={savingOps || dayRows.length === 0}
-                    className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
-                  >
-                    {savingOps ? "Guardando…" : "Guardar"}
-                  </button>
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-      )}
-
-      {/* Aggregated period breakdown */}
-      {aggModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setAggModal(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b">
-              <h3 className="font-semibold text-gray-900">Línea {aggModal.lineNo} — {aggModal.label}</h3>
-              <p className="text-sm text-gray-500">{Math.round(aggModal.total).toLocaleString()} pzas · {aggModal.orders.length} orden(es)</p>
-            </div>
-            <div className="p-4 max-h-[60vh] overflow-y-auto divide-y">
-              {aggModal.orders
-                .sort((a, b) => b.qty - a.qty)
-                .map((o) => (
-                  <div key={o.id} className="py-2 flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${blockColor(o.groupKey).dot}`} />
-                    <span className="font-mono text-sm font-medium text-gray-800 flex-1 truncate">{o.no}</span>
-                    {o.pre && <span className="text-[8px] font-bold leading-none rounded-full bg-violet-600 text-white px-1.5 py-0.5 shrink-0">PRE</span>}
-                    <span className="text-sm text-gray-600">{Math.round(o.qty).toLocaleString()} pzas</span>
-                  </div>
-                ))}
-            </div>
-            <div className="px-6 py-4 border-t flex justify-end">
-              <button onClick={() => setAggModal(null)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Cerrar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add a planner-defined line (not yet configured by engineering) */}
-      {addLine && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => !savingLine && setAddLine(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b">
-              <h3 className="font-semibold text-gray-900">Agregar línea</h3>
-              <p className="text-sm text-gray-500">Crea una línea que ingeniería aún no configuró para poder asignarle órdenes. Podrán ajustarla después.</p>
-            </div>
-            <div className="p-6 space-y-3">
-              <label className="block">
-                <span className="text-xs font-medium text-gray-600">Número de línea *</span>
-                <input
-                  autoFocus
-                  value={addLine.lineNo}
-                  onChange={(e) => setAddLine((s) => ({ ...s, lineNo: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === "Enter") createPlannerLine(); }}
-                  placeholder="p. ej. 9"
-                  className="mt-1 w-full border rounded-lg px-3 py-2 text-sm"
-                />
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block">
-                  <span className="text-xs font-medium text-gray-600">Operarios</span>
-                  <input type="number" min="1" value={addLine.operators}
-                    onChange={(e) => setAddLine((s) => ({ ...s, operators: e.target.value }))}
-                    placeholder="20" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" />
-                </label>
-                <label className="block">
-                  <span className="text-xs font-medium text-gray-600">Horas/día</span>
-                  <input type="number" min="0.1" step="0.5" value={addLine.hours}
-                    onChange={(e) => setAddLine((s) => ({ ...s, hours: e.target.value }))}
-                    placeholder="8" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" />
-                </label>
-                <label className="block">
-                  <span className="text-xs font-medium text-gray-600">Eficiencia %</span>
-                  <input type="number" min="1" max="100" value={addLine.effPct}
-                    onChange={(e) => setAddLine((s) => ({ ...s, effPct: e.target.value }))}
-                    placeholder="85" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" />
-                </label>
-                <label className="block">
-                  <span className="text-xs font-medium text-gray-600">SAM (min)</span>
-                  <input type="number" min="0.01" step="0.1" value={addLine.sam}
-                    onChange={(e) => setAddLine((s) => ({ ...s, sam: e.target.value }))}
-                    placeholder="3.5" className="mt-1 w-full border rounded-lg px-3 py-2 text-sm" />
-                </label>
-              </div>
-              <p className="text-[11px] text-gray-400">Deje los campos vacíos para usar los valores por defecto (20 operarios · 8 h · 85% · SAM 3.5).</p>
-            </div>
-            <div className="px-6 py-4 border-t flex justify-end gap-2">
-              <button onClick={() => setAddLine(null)} disabled={savingLine} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50">Cancelar</button>
-              <button onClick={createPlannerLine} disabled={savingLine} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
-                {savingLine && <Loader2 className="w-4 h-4 animate-spin" />} Agregar
-              </button>
-=======
->>>>>>> fb9041d (supermarket, line leader, engineer)
             </div>
           </div>
         </div>
