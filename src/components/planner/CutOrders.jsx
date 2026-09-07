@@ -5,11 +5,7 @@
 // corte y las órdenes que aún faltan por asignar a corte (estilo planboard).
 //
 import { useState, useEffect, useMemo } from "react";
-<<<<<<< HEAD
-import { Scissors, Calendar, Trash2, AlertCircle, RefreshCw, Package } from "lucide-react";
-=======
 import { Scissors, Calendar, Trash2, AlertCircle, RefreshCw, Package, Search } from "lucide-react";
->>>>>>> fb9041d (supermarket, line leader, engineer)
 import { format } from "date-fns";
 import { API_URL } from "../../lib/masterCodeCatalog";
 import { colorForWO } from "../../lib/workOrderColors";
@@ -150,13 +146,10 @@ export default function CutOrders() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-<<<<<<< HEAD
-=======
   // Filtros de texto (PO cliente, N° orden, cliente, color…) para cada lista.
   const [cutFilter, setCutFilter] = useState("");
   const [pendingFilter, setPendingFilter] = useState("");
 
->>>>>>> fb9041d (supermarket, line leader, engineer)
   const [form, setForm] = useState({
     workOrderId: "",
     color: "",
@@ -491,8 +484,6 @@ export default function CutOrders() {
     });
   }, [workOrders, cutOrders]);
 
-<<<<<<< HEAD
-=======
   // Órdenes de corte que coinciden con el filtro (PO cliente, N° orden,
   // cliente, color, estilo, temporada). Sin filtro, la lista completa.
   const filteredCutOrders = useMemo(() => {
@@ -514,7 +505,6 @@ export default function CutOrders() {
     });
   }, [pendingJobs, pendingFilter]);
 
->>>>>>> fb9041d (supermarket, line leader, engineer)
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
@@ -784,13 +774,9 @@ export default function CutOrders() {
           <div className="px-5 py-4 border-b flex items-center justify-between">
             <div>
               <h3 className="font-semibold text-gray-900">Órdenes de corte</h3>
-<<<<<<< HEAD
-              <p className="text-sm text-gray-500">{cutOrders.length} registradas</p>
-=======
               <p className="text-sm text-gray-500">
                 {cutFilter ? `${filteredCutOrders.length} de ${cutOrders.length} registradas` : `${cutOrders.length} registradas`}
               </p>
->>>>>>> fb9041d (supermarket, line leader, engineer)
             </div>
             <button
               onClick={fetchCutOrders}
@@ -800,8 +786,6 @@ export default function CutOrders() {
             </button>
           </div>
 
-<<<<<<< HEAD
-=======
           {cutOrders.length > 0 && (
             <div className="px-5 py-3 border-b">
               <div className="relative">
@@ -827,7 +811,6 @@ export default function CutOrders() {
             </div>
           )}
 
->>>>>>> fb9041d (supermarket, line leader, engineer)
           {(cutAlerts.restanteCount > 0 || cutAlerts.exceedsCount > 0) && (
             <div className="px-5 py-3 border-b flex flex-wrap items-center gap-2 bg-amber-50/60">
               <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -848,17 +831,11 @@ export default function CutOrders() {
             <div className="p-8 text-center text-gray-500">Cargando…</div>
           ) : cutOrders.length === 0 ? (
             <div className="p-8 text-center text-gray-500">Aún no hay órdenes de corte.</div>
-<<<<<<< HEAD
-          ) : (
-            <div className="divide-y max-h-[70vh] overflow-y-auto">
-              {cutOrders.map((co) => {
-=======
           ) : filteredCutOrders.length === 0 ? (
             <div className="p-8 text-center text-gray-500">Ninguna orden de corte coincide con el filtro.</div>
           ) : (
             <div className="divide-y max-h-[70vh] overflow-y-auto">
               {filteredCutOrders.map((co) => {
->>>>>>> fb9041d (supermarket, line leader, engineer)
                 const meta = STATUS[co.status] || { label: co.status, pill: "bg-gray-100 text-gray-700" };
                 const bal = cutBalance(co);
                 return (
@@ -974,15 +951,6 @@ export default function CutOrders() {
         <div className="rounded-2xl border bg-white shadow-sm">
           <div className="px-5 py-4 border-b flex items-center gap-2">
             <Package className="w-4 h-4 text-amber-600" />
-<<<<<<< HEAD
-            <h3 className="font-semibold text-gray-900">Por asignar a corte ({pendingJobs.length})</h3>
-          </div>
-          {pendingJobs.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">Todas las órdenes tienen corte.</div>
-          ) : (
-            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto">
-              {pendingJobs.map((job) => (
-=======
             <h3 className="font-semibold text-gray-900">
               Por asignar a corte ({pendingFilter ? `${filteredPendingJobs.length} de ${pendingJobs.length}` : pendingJobs.length})
             </h3>
@@ -1018,7 +986,6 @@ export default function CutOrders() {
           ) : (
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto">
               {filteredPendingJobs.map((job) => (
->>>>>>> fb9041d (supermarket, line leader, engineer)
                 <button
                   key={job.key}
                   onClick={() => prefillFrom(job.workOrderId, job.color)}
