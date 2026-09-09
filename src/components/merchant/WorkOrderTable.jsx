@@ -1,5 +1,5 @@
 import { Fragment, useState } from "react";
-import { Camera, Pencil, ChevronRight, ChevronDown } from "lucide-react";
+import { Camera, Pencil, ChevronRight, ChevronDown, Layers } from "lucide-react";
 import { TALLAS } from "../../lib/masterCodeCatalog";
 
 /*
@@ -29,6 +29,23 @@ const STATUS = {
   completed:   { label: "Completada", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   cancelled:   { label: "Cancelada",  cls: "bg-rose-50 text-rose-700 border-rose-200" },
 };
+
+// CONJUNTO (chamarra + pantalón vendidos como una unidad). La PO sigue siendo
+// una PO normal para producción; esta insignia sólo dice de qué conjunto es y
+// qué prenda le toca, para que nadie la lea como un pedido suelto.
+function SetBadge({ setNo, component, ratio }) {
+  if (!setNo && !component) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700"
+      title={`Parte del conjunto ${setNo || ""}${Number(ratio) > 1 ? ` · ${ratio} pzs por conjunto` : ""}`}
+    >
+      <Layers size={10} />
+      {component || "CONJUNTO"}
+      {Number(ratio) > 1 && <span className="font-mono">×{Number(ratio)}</span>}
+    </span>
+  );
+}
 
 function StatusBadge({ status }) {
   const s = STATUS[status] || STATUS.pending;
@@ -178,7 +195,14 @@ export default function WorkOrderTable({ orders, onEdit }) {
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-2 whitespace-nowrap font-mono font-bold text-slate-800">{o.work_order_no}</td>
+                  <td className="px-4 py-2 whitespace-nowrap font-mono font-bold text-slate-800">
+                    {o.work_order_no}
+                    {o.set_id && (
+                      <span className="block mt-0.5">
+                        <SetBadge setNo={o.set_no} component={o.set_component} ratio={o.set_ratio} />
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2 whitespace-nowrap font-mono text-slate-600">{o.customer_po || "—"}</td>
                   <td className="px-4 py-2 whitespace-nowrap text-slate-600">{o.customer_name}</td>
                   <td className="px-4 py-2 font-mono text-slate-600">{o.color || "—"}</td>
@@ -223,6 +247,15 @@ export default function WorkOrderTable({ orders, onEdit }) {
                       {/* Rest of the work_orders header */}
                       <div className="mb-2 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
                         <Meta label="Estilo" value={o.style_code} mono />
+                        {/* De qué conjunto es esta PO. Producción no necesita
+                            saberlo; el merchant y el almacén sí. */}
+                        {o.set_id && (
+                          <Meta
+                            label="Conjunto"
+                            value={`${o.set_no || "—"} · ${o.set_component || "?"}${Number(o.set_ratio) > 1 ? ` (${o.set_ratio} pzs c/u)` : ""}`}
+                            mono
+                          />
+                        )}
                         <Meta label="Descripción" value={o.style_description} />
                         <Meta label="Temporada" value={o.season} mono />
                         <Meta label="SAM" value={fmtNum(o.sam_minutes)} mono />

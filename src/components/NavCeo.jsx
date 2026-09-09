@@ -1,15 +1,50 @@
 // NavCeo.jsx - CEO specific navigation bar
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
+import { API_URL } from "../lib/masterCodeCatalog";
 
 export default function NavCeo() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
+  // Pending efficiency-change requests waiting for CEO approval → badge on
+  // "Plan Analytics". Refreshed on mount, on window focus, every 60s, and
+  // whenever the efficiency screens dispatch "efficiency-permissions-updated".
+  const [pendingEff, setPendingEff] = useState(0);
+
+  const loadPending = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+      const res = await fetch(`${API_URL}/api/efficiency-change-requests?status=pending`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => null);
+      if (data?.success) {
+        setPendingEff(Number(data.pendingCount ?? (data.requests?.length || 0)) || 0);
+      }
+    } catch {
+      /* ignore — badge just won't update */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPending();
+    const id = setInterval(loadPending, 60000);
+    const onFocus = () => loadPending();
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("efficiency-permissions-updated", loadPending);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("efficiency-permissions-updated", loadPending);
+    };
+  }, [loadPending]);
+
   const menu = [
     { name: "Production Monitor", path: "/overview" },
     { name: "Actual Efficiency", path: "/actual-efficiency" },
-    { name: "Plan Analytics", path: "/planner-analytics" },
+    { name: "Plan Analytics", path: "/planner-analytics", notify: true },
     { name: "Quality Monitor", path: "/quality-monitor" },
     { name: "Mechanics", path: "/mecanics" },
     { name: "Merchant Analytics", path: "/merchant-analytics" },
@@ -22,6 +57,16 @@ export default function NavCeo() {
     localStorage.removeItem('user');
     navigate('/');
   };
+
+  const Badge = ({ className = "" }) =>
+    pendingEff > 0 ? (
+      <span
+        title={`${pendingEff} solicitud(es) de eficiencia pendiente(s)`}
+        className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[11px] font-bold leading-none ${className}`}
+      >
+        {pendingEff > 99 ? "99+" : pendingEff}
+      </span>
+    ) : null;
 
   return (
     <nav className="bg-gradient-to-r from-gray-900 to-gray-800 text-white sticky top-0 z-50 shadow-lg">
@@ -46,7 +91,10 @@ export default function NavCeo() {
                   }`
                 }
               >
-                {item.name}
+                <span className="inline-flex items-center gap-1.5">
+                  {item.name}
+                  {item.notify && <Badge />}
+                </span>
               </NavLink>
             </li>
           ))}
@@ -63,10 +111,14 @@ export default function NavCeo() {
         {/* Hamburger Menu Button */}
         <button
           onClick={() => setOpen(!open)}
-          className="md:hidden text-2xl cursor-pointer focus:outline-none"
+          className="md:hidden text-2xl cursor-pointer focus:outline-none relative"
           aria-label="Toggle menu"
         >
           {open ? "✕" : "☰"}
+          {/* Dot on the hamburger so pending approvals are visible while collapsed */}
+          {!open && pendingEff > 0 && (
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500" />
+          )}
         </button>
       </div>
 
@@ -87,7 +139,10 @@ export default function NavCeo() {
                     }`
                   }
                 >
-                  {item.name}
+                  <span className="inline-flex items-center gap-2">
+                    {item.name}
+                    {item.notify && <Badge />}
+                  </span>
                 </NavLink>
               </li>
             ))}

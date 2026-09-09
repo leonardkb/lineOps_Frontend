@@ -23,6 +23,8 @@ const fmt = (v) => {
 };
 
 const pct = (v) => `${Math.round(Number(v) || 0)}%`;
+// Eficiencia con un decimal ("84.5%"), para no perder medias unidades.
+const pct1 = (v) => `${(Math.round((Number(v) || 0) * 10) / 10).toLocaleString()}%`;
 
 // Green once the corte is cutting to plan, red while it's barely started.
 const progressColor = (p) => {
@@ -277,7 +279,7 @@ export default function CutOrderAnalytics() {
 
         {/* KPI strip (fixed) */}
         <div className="grid grid-cols-3 sm:grid-cols-4 xl:grid-cols-8 gap-2 flex-shrink-0">
-          <Kpi label="Órdenes" value={fmt(summary.total_orders)} sub={`${fmt(summary.total_marcadas)} marcadas`} tone="indigo" />
+          <Kpi label="Órdenes" value={fmt(summary.total_orders)} sub={`${fmt(summary.total_marcadas)} marcadas${summary.avg_efficiency != null ? ` · ef. ${pct1(summary.avg_efficiency)}` : ''}`} tone="indigo" />
           <Kpi label="Planeación" value={fmt((summary.planning_orders || 0) + (summary.ready_orders || 0))}
             sub={`${fmt(summary.planning_orders)} sin marcadas`} />
           <Kpi label="En corte" value={fmt(summary.cutting_orders)} sub={`${fmt(summary.total_remaining)} pzs por cortar`} />
@@ -406,6 +408,18 @@ export default function CutOrderAnalytics() {
                               <span className="text-gray-400"> / {fmt(row.marcadas)}</span>
                             </>
                           ) : <span className="text-gray-300">—</span>}
+                          {row.efficiency_avg != null && (
+                            <span
+                              className="block text-[10px] text-indigo-600 font-medium"
+                              title={
+                                row.efficiency_min != null && row.efficiency_max != null && row.efficiency_min !== row.efficiency_max
+                                  ? `Eficiencia de marcada ${pct1(row.efficiency_min)}–${pct1(row.efficiency_max)} · prom. ${pct1(row.efficiency_avg)} · ${fmt(row.efficiency_count)} con dato`
+                                  : `Eficiencia de marcada ${pct1(row.efficiency_avg)} · ${fmt(row.efficiency_count)} con dato`
+                              }
+                            >
+                              ef. {pct1(row.efficiency_avg)}
+                            </span>
+                          )}
                         </td>
                         <td className="py-1.5 pr-2">
                           <StageChip stage={row.stage} />

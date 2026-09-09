@@ -17,10 +17,11 @@ import { useState, useEffect, useMemo } from "react";
 import {
   LayoutGrid, Gauge, Search, Loader2, CheckCircle2, AlertTriangle,
   MinusCircle, ArrowUpDown, Layers, Info, CalendarClock, Package,
-  ClipboardList, Truck,
+  ClipboardList, Truck, ShieldCheck,
 } from "lucide-react";
 import { API_URL } from "../../lib/masterCodeCatalog";
 import PlanBoard from "./PlanBoard";
+import EfficiencyPermissions from "./EfficiencyPermissions";
 import NavCeo from "../NavCeo";
 
 const authHeaders = () => ({
@@ -506,6 +507,7 @@ export default function PlannerAnalytics() {
               {tab === "sam" && "SAM del merchant contra la SAM de producción."}
               {tab === "orders" && "Estado, avance y fechas de entrega: merchant vs plan del planner."}
               {tab === "board" && "El tablero que armó planeación, en modo consulta."}
+              {tab === "efficiency" && "Solicitudes de cambio de eficiencia por estilo, para aprobación del CEO."}
             </p>
           </div>
           <KpiStrip cards={activeKpis.cards} loading={loading} />
@@ -516,6 +518,7 @@ export default function PlannerAnalytics() {
             <Tab active={tab === "sam"} onClick={() => setTab("sam")} Icon={Gauge}>SAM: Merchant vs Producción</Tab>
             <Tab active={tab === "orders"} onClick={() => setTab("orders")} Icon={ClipboardList}>Estado de órdenes</Tab>
             <Tab active={tab === "board"} onClick={() => setTab("board")} Icon={LayoutGrid}>Tablero del planner</Tab>
+            <Tab active={tab === "efficiency"} onClick={() => setTab("efficiency")} Icon={ShieldCheck}>Permisos de eficiencia</Tab>
           </div>
         </div>
       </header>
@@ -527,6 +530,10 @@ export default function PlannerAnalytics() {
             {boardVisited && (
               <PlanBoard readOnly heading="Tablero del planner" subheading="Vista de consulta." />
             )}
+          </div>
+        ) : tab === "efficiency" ? (
+          <div className="h-full overflow-auto">
+            <EfficiencyPermissions />
           </div>
         ) : (
           <div className="h-full flex flex-col max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-3">

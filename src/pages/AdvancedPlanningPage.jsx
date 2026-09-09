@@ -9,9 +9,10 @@ import CutOrders from "../components/planner/CutOrders";
 import LineAssignmentForm from "../components/planner/LineAssignmentForm";
 import PlanBoard from "../components/planner/PlanBoard";
 import HolidaysManager from "../components/planner/HolidaysManager";
+import ChangeEfficiency from "../components/planner/ChangeEfficiency";
 
 // Tabs that stand on their own — switching to one drops the selected order.
-const STANDALONE_TABS = ["dashboard", "list", "planboard", "status", "cut", "holidays"];
+const STANDALONE_TABS = ["dashboard", "list", "planboard", "status", "cut", "holidays", "efficiency"];
 
 export default function AdvancedPlanningPage() {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -71,6 +72,7 @@ export default function AdvancedPlanningPage() {
     { id: "status", label: "Estado de Órdenes", visible: true },
     { id: "cut", label: "Corte", visible: true },
     { id: "holidays", label: "Días Festivos", visible: true },
+    { id: "efficiency", label: "Cambiar Eficiencia", visible: true },
     // Hidden contextual tabs
     { id: "edit", label: "Editar Orden", visible: woMode === "edit" && selectedWorkOrder !== null },
     { id: "assign", label: "Asignar", visible: woMode === "assign" && selectedWorkOrder !== null },
@@ -146,6 +148,10 @@ export default function AdvancedPlanningPage() {
 
           {/* Non-working days: block them here, the Plan Board honours them */}
           {activeTab === "holidays" && <HolidaysManager />}
+
+          {/* Per-style efficiency changes (queued for CEO approval; applied to
+              the Plan Board capacity once approved). */}
+          {activeTab === "efficiency" && <ChangeEfficiency />}
 
           {activeTab === "list" && (
             <WorkOrderList

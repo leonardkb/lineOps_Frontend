@@ -39,6 +39,7 @@ const rnd2 = (v) => num(v).toLocaleString(undefined, { maximumFractionDigits: 2 
 const SIZE_LABELS = {
   "130": "XXXS", "132": "XXS", "134": "XS", "136": "S", "138": "M",
   "140": "L", "142": "XL", "144": "XXL",
+  "146": "XXXL", "148": "S-T", "150": "M-T", "152": "L-T", "154": "XL-T", "156": "2XL-T",
   "004": "I-XS", "006": "S", "008": "M", "010": "L",
 };
 const tallaLabel = (talla) => {
@@ -143,6 +144,8 @@ const buildMarkers = (co) => {
       fabricName: m.fabricName != null ? String(m.fabricName) : (co?.fabric || ""),
       longitud: m.longitud != null ? String(m.longitud) : "",
       yield: m.yield != null ? String(m.yield) : "",
+      efficiency: m.efficiency != null ? String(m.efficiency) : "",
+      comment: m.comment != null ? String(m.comment) : "",
       done: !!m.done,
       completedAt: m.completedAt || null,
       saved: true,
@@ -158,6 +161,8 @@ const emptyMarker = (co, index, fabric = null) => ({
   fabricName: fabric?.name ?? co?.fabric ?? "",
   longitud: "",
   yield: "",
+  efficiency: "",
+  comment: "",
   done: false,
   completedAt: null,
   saved: false,
@@ -187,6 +192,8 @@ const serializeMarkers = (list) =>
     longitud: num(m.longitud),
     yield: markerYield(m),
     consumo: markerConsumo(m),
+    efficiency: m.efficiency === "" || m.efficiency == null ? null : num(m.efficiency),
+    comment: (m.comment || "").toString().trim() || null,
     panels: markerPanels(m),
     totalPieces: markerTotal(m),
     done: !!m.done,
@@ -701,37 +708,74 @@ export default function CutPlanning() {
                           </div>
                         </div>
 
-                        {/* Longitud · Rendimiento · Consumo */}
-                        <div className={`px-3 py-2.5 border-b grid grid-cols-3 gap-2 ${locked ? "bg-green-50/40" : "bg-white"}`}>
-                          <label className="block">
-                            <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Longitud (m)</span>
+                        {/* Longitud · Eficiencia · Rendimiento · Consumo */}
+                        <div className={`px-3 py-2.5 border-b ${locked ? "bg-green-50/40" : "bg-white"}`}>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <label className="block">
+                              <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Longitud (m)</span>
+                              {locked ? (
+                                <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-right text-sm font-semibold text-gray-700">{rnd2(m.longitud)}</div>
+                              ) : (
+                                <input
+                                  type="number" min="0" step="0.01" inputMode="decimal" value={m.longitud}
+                                  onChange={(e) => setMarkerField(m.id, "longitud", e.target.value)}
+                                  onFocus={(e) => e.target.select()}
+                                  placeholder="0"
+                                  className="w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-right text-sm font-semibold outline-none focus:ring-2 focus:ring-gray-900/10"
+                                />
+                              )}
+                            </label>
+
+                            <label className="block">
+                              <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Eficiencia (%)</span>
+                              {locked ? (
+                                <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-right text-sm font-semibold text-gray-700">
+                                  {m.efficiency !== "" && m.efficiency != null ? `${rnd2(m.efficiency)}%` : "—"}
+                                </div>
+                              ) : (
+                                <input
+                                  type="number" min="0" max="100" step="0.01" inputMode="decimal" value={m.efficiency}
+                                  onChange={(e) => setMarkerField(m.id, "efficiency", e.target.value)}
+                                  onFocus={(e) => e.target.select()}
+                                  placeholder="0"
+                                  title="Eficiencia del trazo reportada por el software de marcado"
+                                  className="w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-right text-sm font-semibold outline-none focus:ring-2 focus:ring-gray-900/10"
+                                />
+                              )}
+                            </label>
+
+                            <label className="block">
+                              <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Rendimiento (m/pza)</span>
+                              <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-right text-sm font-semibold text-gray-700">
+                                {rnd2(yieldVal)}
+                              </div>
+                              <span className="block text-[10px] text-gray-400 mt-0.5 text-right">(long + {TOLERANCE}) ÷ {rnd(panels)} panel(es)</span>
+                            </label>
+
+                            <label className="block">
+                              <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Consumo (m)</span>
+                              <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-2 py-2 text-right text-sm font-bold text-blue-700">
+                                {rnd2(consumo)}
+                              </div>
+                              <span className="block text-[10px] text-gray-400 mt-0.5 text-right">(long ÷ {rnd(panels)}) × {rnd(tot)} pzas</span>
+                            </label>
+                          </div>
+
+                          {/* Comentario de la marcada */}
+                          <label className="block mt-2">
+                            <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Comentario</span>
                             {locked ? (
-                              <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-right text-sm font-semibold text-gray-700">{rnd2(m.longitud)}</div>
+                              <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-sm text-gray-700 min-h-[38px] whitespace-pre-wrap">
+                                {m.comment && m.comment.trim() ? m.comment : "—"}
+                              </div>
                             ) : (
-                              <input
-                                type="number" min="0" step="0.01" inputMode="decimal" value={m.longitud}
-                                onChange={(e) => setMarkerField(m.id, "longitud", e.target.value)}
-                                onFocus={(e) => e.target.select()}
-                                placeholder="0"
-                                className="w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-right text-sm font-semibold outline-none focus:ring-2 focus:ring-gray-900/10"
+                              <textarea
+                                rows={2} value={m.comment}
+                                onChange={(e) => setMarkerField(m.id, "comment", e.target.value)}
+                                placeholder="Notas de esta marcada (opcional)…"
+                                className="w-full resize-y rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
                               />
                             )}
-                          </label>
-
-                          <label className="block">
-                            <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Rendimiento (m/pza)</span>
-                            <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-right text-sm font-semibold text-gray-700">
-                              {rnd2(yieldVal)}
-                            </div>
-                            <span className="block text-[10px] text-gray-400 mt-0.5 text-right">(long + {TOLERANCE}) ÷ {rnd(panels)} panel(es)</span>
-                          </label>
-
-                          <label className="block">
-                            <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Consumo (m)</span>
-                            <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-2 py-2 text-right text-sm font-bold text-blue-700">
-                              {rnd2(consumo)}
-                            </div>
-                            <span className="block text-[10px] text-gray-400 mt-0.5 text-right">(long ÷ {rnd(panels)}) × {rnd(tot)} pzas</span>
                           </label>
                         </div>
 

@@ -552,6 +552,9 @@ useEffect(() => {
               runId: run.id,
               style: run.style,
               color: run.color,
+              workOrderId: run.work_order_id ?? null,
+              workOrderNo: run.work_order_no ?? null,
+              workOrderStyle: run.work_order_style ?? null,
               targetPcs: run.target_pcs,
               finishedGarments: finishedGarments,
               realtimeTarget: rtTarget,
@@ -1042,6 +1045,13 @@ const isProductionEnded = (selectedDate) => {
                     ? `${uniqueStyles[0]} · ${runColors.join(" / ")}`
                     : uniqueStyles[0]
                   : uniqueStyles.join(" / ");
+
+              // Work order(s) the line is producing for. A line can run several
+              // orders (multiple styles/colors), so dedupe and list them. Comes
+              // from line_runs.work_order_id -> work_orders (see batch endpoint).
+              const workOrderNos = [
+                ...new Set(runs.map((r) => r.workOrderNo).filter(Boolean)),
+              ];
               
               const displayEfficiency = efficiency;
               const status = getLineStatus(displayEfficiency);
@@ -1064,13 +1074,33 @@ const isProductionEnded = (selectedDate) => {
                     ${hoveredCard === cardId ? 'shadow-lg scale-[1.01]' : ''}`}
                 >
                   <div className="px-2 py-1.5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
-                    <div className="flex justify-between items-center mb-0.5">
-                      <span className="font-bold text-base text-gray-900">L{lineNo}</span>
-                      <div className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getStatusBgColor(status.color)}`}>
+                    <div className="flex justify-between items-start gap-1 mb-0.5">
+                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0">
+                        <span className="font-bold text-base text-gray-900 shrink-0">L{lineNo}</span>
+                        {workOrderNos.length > 0 ? (
+                          <span className="flex flex-wrap items-center gap-1 min-w-0">
+                            <span className="text-gray-400 text-[10px] font-semibold shrink-0">WO</span>
+                            {workOrderNos.map((no) => (
+                              <span
+                                key={no}
+                                className="min-w-0 max-w-full truncate px-1.5 py-0.5 rounded bg-gray-100 text-[10px] font-semibold text-gray-700"
+                                title={no}
+                              >
+                                {no}
+                              </span>
+                            ))}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-medium text-gray-300 italic shrink-0">
+                            Sin orden
+                          </span>
+                        )}
+                      </div>
+                      <div className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${getStatusBgColor(status.color)}`}>
                         {status.icon}
                       </div>
                     </div>
-                    
+
                     <div className="text-xs font-medium text-gray-600 truncate" title={styleLabel}>
                       {styleLabel}
                     </div>

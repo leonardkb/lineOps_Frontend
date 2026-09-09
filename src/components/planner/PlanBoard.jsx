@@ -134,6 +134,10 @@ export default function PlanBoard({
   const [workOrders, setWorkOrders] = useState([]);
   const [lineRuns, setLineRuns] = useState([]);
   const [plannerLines, setPlannerLines] = useState([]); // lines the planner added but engineering hasn't configured
+  // CEO-approved per-style efficiency overrides { STYLEKEY: efficiency }. Applied
+  // ONLY to the plan-board capacity math (coloring / period sums), never to the
+  // stored runs. Mirrors the server's getLineCapacityForDate override.
+  const [styleEffOverrides, setStyleEffOverrides] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedAssignment, setSelectedAssignment] = useState(null);
   const [hovered, setHovered] = useState(null); // { assignment, x, y }
@@ -313,6 +317,22 @@ export default function PlanBoard({
   const activePO = draggedPO || armedPO;
 
   useEffect(() => { fetchData(); }, []);
+
+  // CEO-approved per-style efficiency overrides for the Plan Board capacity math.
+  // Only for the live board (with a dataOverride snapshot the capacity is already
+  // baked in). Best-effort: an empty map just means "no overrides", never a crash.
+  useEffect(() => {
+    if (dataOverride) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/style-efficiency-overrides`, { headers: authHeaders() });
+        const data = await res.json().catch(() => null);
+        if (!cancelled && data?.success) setStyleEffOverrides(data.overrides || {});
+      } catch { /* ignore — capacity falls back to stored target_pcs */ }
+    })();
+    return () => { cancelled = true; };
+  }, [dataOverride]);
 
   // Al volver a la pestaña, re-sincroniza en silencio. Es como se entera de que
   // una pre-orden ya se convirtió (o de que el merchant movió una semana) sin
@@ -1005,6 +1025,31 @@ export default function PlanBoard({
   // planner-line target), mirroring the server's "most-recent config on/before
   // the date" rule. /api/line-runs sends the full history, so this needs no
   // per-day server round-trip. Weekends are non-working and add no capacity.
+  // The efficiency to USE for a run in plan-board capacity math: the CEO-approved
+  // style override if one exists, else the run's own stored efficiency.
+  const effOf = (r) => {
+    const key = String(r?.style || "").trim().toUpperCase();
+    const ov = key ? styleEffOverrides[key] : null;
+    return ov != null && ov > 0 ? ov : (Number(r?.efficiency) || 0);
+  };
+
+  // A run's effective daily capacity for the PLAN BOARD. If the CEO approved an
+  // efficiency override for the run's style, recompute pieces from the run's own
+  // operators/hours/SAM at the approved efficiency; otherwise use the stored
+  // target_pcs. Never mutates the run — this is display/capacity math only.
+  const effTargetOf = (r) => {
+    const key = String(r?.style || "").trim().toUpperCase();
+    const ov = key ? styleEffOverrides[key] : null;
+    if (ov != null && ov > 0) {
+      const ops = Number(r.operators_count) || 0;
+      const wh = Number(r.working_hours) || 0;
+      const sam = Number(r.sam_minutes) || 0;
+      const piecesAt100 = sam > 0 ? (ops * wh * 60) / sam : 0;
+      return piecesAt100 * ov;
+    }
+    return Number(r?.target_pcs) || 0;
+  };
+
   const dayTotalsByLine = useMemo(() => {
     const perLineDay = new Map(); // line -> Map(dayStr -> summed target_pcs)
     for (const r of lineRuns) {
@@ -1014,7 +1059,7 @@ export default function PlanBoard({
       if (!d) continue;
       if (!perLineDay.has(k)) perLineDay.set(k, new Map());
       const dm = perLineDay.get(k);
-      dm.set(d, (dm.get(d) || 0) + (Number(r.target_pcs) || 0)); // sum styles on the same day
+      dm.set(d, (dm.get(d) || 0) + effTargetOf(r)); // sum styles on the same day (with plan-board override)
     }
     const out = new Map();
     for (const [k, dm] of perLineDay) {
@@ -1026,7 +1071,7 @@ export default function PlanBoard({
       );
     }
     return out;
-  }, [lineRuns]);
+  }, [lineRuns, styleEffOverrides]);
 
   // A line's real daily capacity on a specific date (summed styles + carry-forward).
   const targetForLineOnDate = (lineNo, dayStr) => {
@@ -1472,7 +1517,7 @@ export default function PlanBoard({
     const runs = lineRuns
       .filter((lr) => String(lr.line_no) === String(lineNo) && lr.target_pcs)
       .sort((a, b) => new Date(b.run_date) - new Date(a.run_date));
-    return runs.length ? Math.round(runs[0].target_pcs) : 0;
+    return runs.length ? Math.round(effTargetOf(runs[0])) : 0; // honor plan-board override
   };
 
   // Most recent run for a line (its operators/hours/efficiency/SAM baseline).
@@ -1685,7 +1730,7 @@ export default function PlanBoard({
   //   pieces/day        = available min/day ÷ SAM
   const previewCapacity = (run, operators) => {
     const wh = Number(run?.working_hours) || 0;
-    const eff = Number(run?.efficiency) || 0;
+    const eff = effOf(run); // plan-board: honor the CEO-approved style override
     const sam = Number(run?.sam_minutes) || 0;
     const availableMin = operators * wh * 60 * eff;
     const pcs = sam > 0 ? availableMin / sam : 0;
@@ -4347,7 +4392,7 @@ export default function PlanBoard({
                             {row.run ? (
                               <div className="bg-blue-50 rounded-lg p-3 text-xs space-y-1">
                                 <div className="flex justify-between"><span className="text-blue-700">Horas:</span><span className="font-medium text-blue-900">{Number(row.run.working_hours)} h</span></div>
-                                <div className="flex justify-between"><span className="text-blue-700">Eficiencia:</span><span className="font-medium text-blue-900">{Math.round(Number(row.run.efficiency) * 100)}%</span></div>
+                                <div className="flex justify-between"><span className="text-blue-700">Eficiencia:</span><span className="font-medium text-blue-900">{Math.round(effOf(row.run) * 100)}%{effOf(row.run) !== (Number(row.run.efficiency) || 0) ? " (tablero)" : ""}</span></div>
                                 {(() => {
                                   const m = merchantSamForOrder(row.woId, row.color);
                                   return (

@@ -39,6 +39,7 @@ const rnd2 = (v) => num(v).toLocaleString(undefined, { maximumFractionDigits: 2 
 const SIZE_LABELS = {
   "130": "XXXS", "132": "XXS", "134": "XS", "136": "S", "138": "M",
   "140": "L", "142": "XL", "144": "XXL",
+  "146": "XXXL", "148": "S-T", "150": "M-T", "152": "L-T", "154": "XL-T", "156": "2XL-T",
   "004": "I-XS", "006": "S", "008": "M", "010": "L",
 };
 const tallaLabel = (talla) => {
@@ -143,6 +144,8 @@ const buildMarkers = (co) => {
       fabricName: m.fabricName != null ? String(m.fabricName) : (co?.fabric || ""),
       longitud: m.longitud != null ? String(m.longitud) : "",
       yield: m.yield != null ? String(m.yield) : "",
+      efficiency: m.efficiency != null ? String(m.efficiency) : "",
+      comment: m.comment != null ? String(m.comment) : "",
       done: !!m.done,
       completedAt: m.completedAt || null,
       saved: true,
@@ -176,6 +179,8 @@ const serializeMarkers = (list) =>
     longitud: num(m.longitud),
     yield: markerYield(m),
     consumo: markerConsumo(m),
+    efficiency: m.efficiency === "" || m.efficiency == null ? null : num(m.efficiency),
+    comment: (m.comment || "").toString().trim() || null,
     panels: markerPanels(m),
     totalPieces: markerTotal(m),
     done: !!m.done,
@@ -875,22 +880,37 @@ export default function CutVerification() {
                           </div>
                         </div>
 
-                        {/* Longitud · Rendimiento · Consumo (solo lectura) */}
-                        <div className={`px-3 py-2.5 border-b grid grid-cols-3 gap-2 ${locked ? "bg-green-50/40" : "bg-white"}`}>
-                          <div className="block">
-                            <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Longitud (m)</span>
-                            <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-right text-sm font-semibold text-gray-700">{rnd2(m.longitud)}</div>
+                        {/* Longitud · Eficiencia · Rendimiento · Consumo (solo lectura) */}
+                        <div className={`px-3 py-2.5 border-b ${locked ? "bg-green-50/40" : "bg-white"}`}>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <div className="block">
+                              <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Longitud (m)</span>
+                              <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-right text-sm font-semibold text-gray-700">{rnd2(m.longitud)}</div>
+                            </div>
+                            <div className="block">
+                              <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Eficiencia (%)</span>
+                              <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-right text-sm font-semibold text-gray-700">
+                                {m.efficiency !== "" && m.efficiency != null ? `${rnd2(m.efficiency)}%` : "—"}
+                              </div>
+                            </div>
+                            <div className="block">
+                              <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Rendimiento (m/pza)</span>
+                              <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-right text-sm font-semibold text-gray-700">{rnd2(yieldVal)}</div>
+                              <span className="block text-[10px] text-gray-400 mt-0.5 text-right">(long + {TOLERANCE}) ÷ {rnd(panels)} panel(es)</span>
+                            </div>
+                            <div className="block">
+                              <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Consumo (m)</span>
+                              <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-2 py-2 text-right text-sm font-bold text-blue-700">{rnd2(consumo)}</div>
+                              <span className="block text-[10px] text-gray-400 mt-0.5 text-right">(long ÷ {rnd(panels)}) × {rnd(tot)} pzas</span>
+                            </div>
                           </div>
-                          <div className="block">
-                            <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Rendimiento (m/pza)</span>
-                            <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-right text-sm font-semibold text-gray-700">{rnd2(yieldVal)}</div>
-                            <span className="block text-[10px] text-gray-400 mt-0.5 text-right">(long + {TOLERANCE}) ÷ {rnd(panels)} panel(es)</span>
-                          </div>
-                          <div className="block">
-                            <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Consumo (m)</span>
-                            <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-2 py-2 text-right text-sm font-bold text-blue-700">{rnd2(consumo)}</div>
-                            <span className="block text-[10px] text-gray-400 mt-0.5 text-right">(long ÷ {rnd(panels)}) × {rnd(tot)} pzas</span>
-                          </div>
+
+                          {m.comment && m.comment.trim() && (
+                            <div className="block mt-2">
+                              <span className="block text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Comentario</span>
+                              <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-sm text-gray-700 whitespace-pre-wrap">{m.comment}</div>
+                            </div>
+                          )}
                         </div>
 
                         {/* Tallas del trazo (solo lectura) */}
