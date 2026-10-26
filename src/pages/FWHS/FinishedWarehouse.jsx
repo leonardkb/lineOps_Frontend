@@ -9,6 +9,7 @@ import FinishedWarehouseDashboard from "../../components/FWH/Finishedwarehouseda
 // import FinishedWarehouseDashboard from "./FinishedWarehouseDashboard";
 // import FinishedInventory from "./FinishedInventory";
 import FinishedWarehouseScan from "../../components/FWH/FinishedWarehouseScan";
+import FinishedWarehouseInventory from "../../components/FWH/FinishedWarehouseInventory";
 
 export default function FinishedWarehouse() {
   const [tab, setTab] = useState("pre-empaque");
@@ -26,7 +27,7 @@ export default function FinishedWarehouse() {
       {tab === "escaneo"    && <FinishedWarehouseScan onNavigate={setTab} />}  
 
       {tab === "inventario" && (
-        <div className="max-w-6xl mx-auto p-10 text-center text-gray-400">Inventario — próximamente</div>
+        <FinishedWarehouseInventory active={tab} onNavigate={setTab} />
       )}
     </div>
   );

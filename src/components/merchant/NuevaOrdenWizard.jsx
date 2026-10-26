@@ -115,8 +115,13 @@ const ratioNum = (v) => {
 // Arma las POs de UNA prenda a partir de la rejilla compartida del paso 2.
 //   fabricsFor(row) -> las telas de ESTA prenda en esa fila de color
 //   ratio           -> multiplica las cantidades capturadas
-// Una PO por (color + estilo cliente + PO cliente + fecha de entrega).
-function buildPoPlan({ colorRows, sizes, fabricsFor, ratio = 1 }) {
+// Una PO por (color + estilo cliente + PO cliente + fecha de entrega + item code).
+// Con item code activo, cada item code (destino de Nike) es su PROPIA PO aunque
+// todo lo demás coincida.
+//   withItemCode    -> respeta el item code de cada línea (reparto de Nike por
+//                      destino). Dos líneas con la misma talla pero distinto
+//                      item code quedan como líneas SEPARADAS de la misma PO.
+function buildPoPlan({ colorRows, sizes, fabricsFor, ratio = 1, withItemCode = false }) {
   const order = [];            // first-seen order of the buckets
   const buckets = new Map();   // key -> { cells: [] }
   const packingOf = (row, talla) => parseInt(row.packing?.[talla], 10) || 0;
@@ -129,10 +134,12 @@ function buildPoPlan({ colorRows, sizes, fabricsFor, ratio = 1 }) {
 
     const customerPo = (row.customerPo || "").trim() || null;
     const commitmentDate = row.deliveryDate || null;
+    const itemCode = withItemCode ? ((row.itemCode || "").trim() || null) : null;
     const meta = {
       estilo: est,
       customerPo,
       commitmentDate,
+      itemCode,
       fabrics: cleanFabrics(fabricsFor(row)),
     };
     const rowCells = [];
@@ -146,11 +153,15 @@ function buildPoPlan({ colorRows, sizes, fabricsFor, ratio = 1 }) {
     }
     if (rowCells.length === 0) continue;
 
-    const key = `${color}|${est}|${customerPo || ""}|${commitmentDate || ""}`;
+    const key = `${color}|${est}|${customerPo || ""}|${commitmentDate || ""}|${itemCode || ""}`;
     let bucket = buckets.get(key);
     if (!bucket) { bucket = { cells: [] }; buckets.set(key, bucket); order.push(key); }
     for (const cell of rowCells) {
-      const dup = bucket.cells.find((c) => c.talla === cell.talla);
+      // Misma talla + mismo item code = se suma. Distinto item code = otra
+      // línea de la PO (el índice único incluye item_code).
+      const dup = bucket.cells.find(
+        (c) => c.talla === cell.talla && (c.itemCode || "") === (cell.itemCode || "")
+      );
       if (dup) {
         dup.quantity += cell.quantity;
         // packing y sku son piezas: se suman igual que la cantidad.
@@ -196,6 +207,7 @@ function buildPoPlan({ colorRows, sizes, fabricsFor, ratio = 1 }) {
         fabricCode: fabricList[0]?.code || null,
         yield: fabricList[0]?.yield ?? null,
         customerPos: [...new Set(b.cells.map((c) => c.customerPo).filter(Boolean))].join(", ") || null,
+        itemCodes: [...new Set(b.cells.map((c) => c.itemCode).filter(Boolean))].join(", ") || null,
         fabrics: fabricList
           .map((f) => `${f.name}${f.code ? ` (${f.code})` : ""}${f.yield ? ` \u00b7 rend ${f.yield}` : ""}`)
           .join(", ") || null,
@@ -261,12 +273,18 @@ export default function NuevaOrdenWizard() {
   // Each line may use SEVERAL fabrics, each with its own code:
   //   fabrics: [{ name, code }, ...]
   const [colorRows, setColorRows] = useState([
-    { color: "", estilo: "", packing: {}, sku: {}, customerPo: "", deliveryDate: "", fabrics: [{ name: "", code: "", yield: "" }] },
+    { color: "", estilo: "", itemCode: "", packing: {}, sku: {}, customerPo: "", deliveryDate: "", fabrics: [{ name: "", code: "", yield: "" }] },
   ]); // packing / sku (piezas) keyed by talla; la cantidad de la talla = packing + sku
 
   // step 3 — customer
   const [customerId, setCustomerId] = useState("");
   const [clienteCode, setClienteCode] = useState("");
+
+  // ITEM CODE por línea. Nike reparte una misma PO entre varios destinos y cada
+  // destino trae su propio item code: la misma talla/color/estilo se captura en
+  // varias líneas, una por item code, y CADA item code es su propia PO. Se enciende sola cuando el cliente es Nike; para otros clientes
+  // es opcional.
+  const [useItemCodes, setUseItemCodes] = useState(false);
 
   // step 4 — details + logistics. La descripcion, el SAM, la foto, el stock y
   // los extras son POR PRENDA (viven en components[]): el SAM de una chamarra
@@ -310,6 +328,13 @@ export default function NuevaOrdenWizard() {
       }
     })();
   }, []);
+
+  // Cliente Nike -> activa el item code por línea (no lo apaga si se cambia de
+  // cliente: lo ya capturado no se pierde, el merchant lo apaga a mano).
+  useEffect(() => {
+    const c = customers.find((x) => String(x.id) === String(customerId));
+    if (c && /nike/i.test(`${c.name || ""} ${c.code || ""}`)) setUseItemCodes(true);
+  }, [customerId, customers]);
 
   // Carga la pre-orden y precarga los pasos 1, 3 y 4 con lo que ya se sabe.
   useEffect(() => {
@@ -397,6 +422,7 @@ export default function NuevaOrdenWizard() {
       const meta = {
         estilo: est,
         customerPo: (row.customerPo || "").trim() || null,
+        itemCode: useItemCodes ? ((row.itemCode || "").trim() || null) : null,
       };
       for (const talla of sizes) {
         const packingQty = packingOf(row, talla);
@@ -410,7 +436,7 @@ export default function NuevaOrdenWizard() {
       }
     }
     return out;
-  }, [colorRows, sizes]);
+  }, [colorRows, sizes, useItemCodes]);
 
   // Per-color estilo checks (step 2)
   const activeColorRows = colorRows.filter((r) => r.color.trim());
@@ -418,6 +444,24 @@ export default function NuevaOrdenWizard() {
   // A row's color+estilo may repeat; POs are split by color+estilo+PO+entrega (see poPlan).
   const allEstiloValid =
     activeColorRows.length > 0 && activeColorRows.every((r) => (r.estilo || "").trim().length === 6);
+  // Con item code activo, cada línea necesita el suyo: una línea sin item code
+  // no se sabe a qué destino va.
+  const allItemCodesValid =
+    !useItemCodes || activeColorRows.every((r) => (r.itemCode || "").trim().length > 0);
+  // Misma PO (color+estilo+PO cliente+entrega) con el mismo item code repetido:
+  // las cantidades se suman, casi siempre es un error de captura.
+  const repeatedItemCodes = useItemCodes
+    ? (() => {
+        const seen = new Set(), dups = new Set();
+        for (const r of activeColorRows) {
+          const ic = (r.itemCode || "").trim();
+          if (!ic) continue;
+          const k = [r.color.trim(), (r.estilo || "").trim(), (r.customerPo || "").trim(), r.deliveryDate || "", ic].join("|");
+          if (seen.has(k)) dups.add(ic); else seen.add(k);
+        }
+        return [...dups];
+      })()
+    : [];
 
   // ---- telas POR PRENDA (accesor) --------------------------------------
   // Se declara ANTES del useMemo de abajo: ese memo corre durante el render y
@@ -445,8 +489,9 @@ export default function NuevaOrdenWizard() {
       colorRows, sizes,
       fabricsFor: (row) => fabricsOf(row, ci),
       ratio: ratioNum(c.ratio),
+      withItemCode: useItemCodes,
     })),
-    [colorRows, sizes, components] // eslint-disable-line react-hooks/exhaustive-deps
+    [colorRows, sizes, components, useItemCodes] // eslint-disable-line react-hooks/exhaustive-deps
   );
   // El plan de la prenda 1: lo que ya usaban la revisión y los totales.
   const poPlan = plans[0] || [];
@@ -507,8 +552,28 @@ export default function NuevaOrdenWizard() {
   // tela, código de tela, rendimiento).
   const setRowField = (i, key, val) =>
     setColorRows((rows) => rows.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
+  // Item code de Nike: alfanumérico + guion, en mayúsculas.
+  const setItemCode = (i, val) =>
+    setRowField(i, "itemCode", val.toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 40));
+  // Copia la línea (color, estilo, PO, entrega, telas) justo debajo, con item
+  // code y cantidades en blanco: así se reparte la misma línea entre destinos.
+  const duplicateRow = (i) =>
+    setColorRows((rows) => {
+      const src = rows[i];
+      const copy = {
+        ...src,
+        itemCode: "",
+        packing: {},
+        sku: {},
+        fabrics: (src.fabrics || []).map((f) => ({ ...f })),
+        ...(src.fabricsBy
+          ? { fabricsBy: Object.fromEntries(Object.entries(src.fabricsBy).map(([k, v]) => [k, (v || []).map((f) => ({ ...f }))])) }
+          : {}),
+      };
+      return [...rows.slice(0, i + 1), copy, ...rows.slice(i + 1)];
+    });
   const newRow = () => ({
-    color: "", estilo: "", packing: {}, sku: {}, customerPo: "",
+    color: "", estilo: "", itemCode: "", packing: {}, sku: {}, customerPo: "",
     deliveryDate: "", fabrics: [{ name: "", code: "", yield: "" }],
   });
 
@@ -626,7 +691,7 @@ export default function NuevaOrdenWizard() {
 
   const stepValid = (s) => {
     if (s === 1) return components.every(compStyleOk) && labelsOk;
-    if (s === 2) return sizes.length > 0 && cells.length > 0 && allEstiloValid;
+    if (s === 2) return sizes.length > 0 && cells.length > 0 && allEstiloValid && allItemCodesValid;
     if (s === 3) return customerId && clienteCode.length === 3;
     if (s === 4) return components.every(compDetailOk);
     return true;
@@ -649,6 +714,7 @@ export default function NuevaOrdenWizard() {
     sizes.length === 0 && "Al menos una talla (paso 2)",
     cells.length === 0 && "Cantidad en al menos una celda color × talla (paso 2)",
     !allEstiloValid && "Estilo cliente (6 caracteres) por cada color (paso 2)",
+    !allItemCodesValid && "Item code en cada línea (paso 2)",
     !customerId && "Cliente (paso 3)",
     clienteCode.length !== 3 && "Código de cliente de 3 letras (paso 3)",
   ].filter(Boolean);
@@ -777,6 +843,7 @@ export default function NuevaOrdenWizard() {
       setComponents([newComponent()]);
       setSizes([]); setColorRows([newRow()]);
       setCustomerId(""); setClienteCode("");
+      setUseItemCodes(false);
       setSeasonCode("");
       if (fileRef.current) fileRef.current.value = "";
       const seqRes = await fetch(`${API_URL}/api/production-orders/next-number`, { headers: authHeaders() });
@@ -982,6 +1049,18 @@ export default function NuevaOrdenWizard() {
               })}
             </div>
 
+            {/* Item code por línea (Nike reparte la PO por destino) */}
+            <label className="mt-4 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 cursor-pointer">
+              <input type="checkbox" checked={useItemCodes} onChange={(e) => setUseItemCodes(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300" />
+              <span className="text-xs text-slate-600">
+                <b className="text-slate-800">Item code por línea</b>
+                <span className="text-slate-500"> · para clientes como Nike que reparten la misma PO entre varios destinos.
+                  Captura una línea por item code (usa <i>Duplicar</i>); cada item code se vuelve su propia orden de
+                  producción, aunque el color, estilo, PO y entrega sean iguales.</span>
+              </span>
+            </label>
+
             {sizes.length === 0 ? (
               <p className="text-sm text-slate-400 mt-4">Selecciona al menos una talla para capturar cantidades.</p>
             ) : (
@@ -999,14 +1078,23 @@ export default function NuevaOrdenWizard() {
                             {rowPieces.toLocaleString()} pzs
                           </span>
                         </span>
-                        <button type="button" onClick={() => removeColor(i)} disabled={colorRows.length === 1}
-                          className="p-1.5 rounded hover:bg-rose-100 text-rose-500 disabled:opacity-30">
-                          <Trash2 size={15} />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          {useItemCodes && (
+                            <button type="button" onClick={() => duplicateRow(i)}
+                              title="Copiar esta línea para otro item code / destino"
+                              className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-200">
+                              <Plus size={12} /> Duplicar
+                            </button>
+                          )}
+                          <button type="button" onClick={() => removeColor(i)} disabled={colorRows.length === 1}
+                            className="p-1.5 rounded hover:bg-rose-100 text-rose-500 disabled:opacity-30">
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       </div>
 
                       {/* Identity + logistics for this line */}
-                      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                      <div className={`grid grid-cols-2 sm:grid-cols-2 gap-2 ${useItemCodes ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
                         <RowField label="Color">
                           <input value={row.color} onChange={(e) => setColor(i, e.target.value)} placeholder="NEG"
                             className="w-full rounded-lg border border-slate-300 px-2 py-1.5 font-mono text-sm uppercase tracking-widest
@@ -1029,6 +1117,17 @@ export default function NuevaOrdenWizard() {
                             className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm
                                        focus:outline-none focus:ring-2 focus:ring-slate-900" />
                         </RowField>
+                        {useItemCodes && (
+                          <RowField label="Item code" hint="Item code / destino del cliente para estas cantidades">
+                            <input value={row.itemCode || ""} onChange={(e) => setItemCode(i, e.target.value)}
+                              placeholder="Item code"
+                              className={`w-full rounded-lg border px-2 py-1.5 font-mono text-sm uppercase
+                                         focus:outline-none focus:ring-2 focus:ring-slate-900
+                                         ${row.color.trim() && !(row.itemCode || "").trim()
+                                           ? "border-rose-300 bg-rose-50"
+                                           : repeatedItemCodes.includes((row.itemCode || "").trim()) ? "border-amber-400 bg-amber-50" : "border-slate-300"}`} />
+                          </RowField>
+                        )}
                       </div>
 
                       {/* Telas: one or more per line, each with its own code and rendimiento.
@@ -1196,10 +1295,16 @@ export default function NuevaOrdenWizard() {
                 <p className="text-xs text-slate-500 mt-3">
                   {cells.length} combinación(es) · {orderedQty.toLocaleString()} piezas · {poPlan.length} orden(es) de producción · {new Set(cells.map((c) => `${c.talla}|${c.color}|${c.estilo}`)).size} código(s) maestro(s)
                 </p>
+                {repeatedItemCodes.length > 0 && (
+                  <p className="text-xs text-amber-700 mt-1 flex items-start gap-1">
+                    <AlertCircle size={12} className="mt-0.5 shrink-0" />
+                    Item code repetido en la misma orden ({repeatedItemCodes.join(", ")}): sus cantidades se van a sumar.
+                  </p>
+                )}
                 {poPlan.length > 1 && (
                   <p className="text-xs text-slate-500 mt-1 flex items-start gap-1">
                     <AlertCircle size={12} className="mt-0.5 shrink-0" />
-                    Se crearán {poPlan.length} órdenes (números automáticos): una orden por cada combinación de color + estilo + PO cliente + fecha de entrega.
+                    Se crearán {poPlan.length} órdenes (números automáticos): una orden por cada combinación de color + estilo + PO cliente + fecha de entrega{useItemCodes ? " + item code" : ""}.
                   </p>
                 )}
               </div>
@@ -1311,7 +1416,7 @@ export default function NuevaOrdenWizard() {
           <SectionCard icon={ClipboardList} title="5 · Revisar y crear"
             subtitle={isSet
               ? `Conjunto de ${components.length} prendas — se crearán ${totalPos} órdenes de producción, una por prenda × color × estilo × PO cliente × entrega`
-              : `Se creará${totalPos === 1 ? "" : "n"} ${totalPos} orden(es) de producción — una por color + estilo + PO cliente + fecha de entrega`}>
+              : `Se creará${totalPos === 1 ? "" : "n"} ${totalPos} orden(es) de producción — una por color + estilo + PO cliente + fecha de entrega${useItemCodes ? " + item code" : ""}`}>
 
             {/* CONJUNTO: lo que el cliente compra (una unidad) vs. lo que la
                 planta produce (una PO por prenda). Verlo junto aquí evita la
@@ -1366,6 +1471,7 @@ export default function NuevaOrdenWizard() {
                               <span className="text-slate-400">
                                 entrega {p.date || "—"}
                                 {" · PO "}{p.customerPos || "—"}
+                                {p.itemCodes && <>{" · item "}{p.itemCodes}</>}
                                 {" · tela "}{p.fabrics || "—"}
                               </span>
                             </span>
@@ -1404,6 +1510,9 @@ export default function NuevaOrdenWizard() {
                       <span className={`font-mono text-sm font-bold ${(r.estilo || "").length === 6 ? "text-slate-800" : "text-rose-500"}`}>
                         {r.estilo || "—"}
                       </span>
+                      {useItemCodes && (r.itemCode || "").trim() && (
+                        <span className="font-mono text-xs text-indigo-600">· item {r.itemCode.trim()}</span>
+                      )}
                     </span>
                   ))}
                 </div>

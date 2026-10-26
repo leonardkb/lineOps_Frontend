@@ -72,6 +72,8 @@ export default function LoginPage() {
         navigate("/supermarket-plan", { replace: true });
       }else if(roleNorm === "verificador") {
         navigate("/verificador", { replace: true });
+      }else if(roleNorm === "fabricwarehouse") {
+        navigate("/fabric-warehouse", { replace: true });
       }
       else {
         navigate("/", { replace: true });
@@ -171,14 +173,6 @@ export default function LoginPage() {
 
         {/* Server Status */}
         <div className="mt-4 text-xs text-center">
-          <button
-            onClick={() =>
-              window.open("/api/health", "_blank")
-            }
-            className="text-blue-500 hover:underline"
-          >
-            Verificar estado del servidor
-          </button>
           <p className="block mt-1 text-gray-400">developed by LK</p>
         </div>
       </div>

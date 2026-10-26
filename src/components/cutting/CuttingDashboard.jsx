@@ -8,6 +8,7 @@ import { RefreshCw, ClipboardList, Clock, CheckCircle, Scissors, Layers, FileSpr
 import * as ExcelJS from "exceljs";
 import { API_URL } from "../../lib/masterCodeCatalog";
 import { colorForWO } from "../../lib/workOrderColors";
+import CutRequestButton from "./CutRequestButton";
 
 const authHeaders = () => ({
   "Content-Type": "application/json",
@@ -579,6 +580,8 @@ export default function CuttingDashboard() {
           <p className="text-sm text-gray-500">Estado de las órdenes de corte y pendientes por cortar</p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Pedir a planeación que asigne una orden a corte */}
+          <CutRequestButton />
           <button
             onClick={exportExcel}
             disabled={totalMarkers === 0}

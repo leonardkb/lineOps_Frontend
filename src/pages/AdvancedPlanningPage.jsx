@@ -9,10 +9,11 @@ import CutOrders from "../components/planner/CutOrders";
 import LineAssignmentForm from "../components/planner/LineAssignmentForm";
 import PlanBoard from "../components/planner/PlanBoard";
 import HolidaysManager from "../components/planner/HolidaysManager";
-import ChangeEfficiency from "../components/planner/ChangeEfficiency";
+// Daily line efficiency (same screen as the Skyrina page, compact embedded mode)
+import SkyrinaDashboard from "./SkyrinaDashboard";
 
 // Tabs that stand on their own — switching to one drops the selected order.
-const STANDALONE_TABS = ["dashboard", "list", "planboard", "status", "cut", "holidays", "efficiency"];
+const STANDALONE_TABS = ["dashboard", "list", "planboard", "status", "efficiency", "cut", "holidays"];
 
 export default function AdvancedPlanningPage() {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -70,13 +71,15 @@ export default function AdvancedPlanningPage() {
     { id: "list", label: "Órdenes", visible: true },
     { id: "planboard", label: "Plan Board", visible: true },
     { id: "status", label: "Estado de Órdenes", visible: true },
+    { id: "efficiency", label: "Eficiencia Diaria", visible: true },
     { id: "cut", label: "Corte", visible: true },
     { id: "holidays", label: "Días Festivos", visible: true },
-    { id: "efficiency", label: "Cambiar Eficiencia", visible: true },
     // Hidden contextual tabs
     { id: "edit", label: "Editar Orden", visible: woMode === "edit" && selectedWorkOrder !== null },
     { id: "assign", label: "Asignar", visible: woMode === "assign" && selectedWorkOrder !== null },
   ];
+
+  const isEfficiencyTab = activeTab === "efficiency";
 
   // Clear message after 5 seconds
   useEffect(() => {
@@ -90,12 +93,22 @@ export default function AdvancedPlanningPage() {
     <div className="min-h-screen bg-gray-50">
       <NavPlanner />
 
-      <div className="mx-auto max-w-7xl p-4 sm:p-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-gray-900">Planificación Avanzada</h1>
-          <p className="text-sm text-gray-600">
-            Gestione órdenes de trabajo y asignaciones a líneas de producción
-          </p>
+      {/* The efficiency board uses the full width and a tighter header so all
+          lines fit on screen without scrolling. */}
+      <div
+        className={`mx-auto ${
+          isEfficiencyTab ? "max-w-[1920px] px-4 pt-3 pb-0" : "max-w-7xl p-4 sm:p-6"
+        }`}
+      >
+        <div className={isEfficiencyTab ? "mb-2" : "mb-6"}>
+          <h1 className={`${isEfficiencyTab ? "text-lg" : "text-2xl"} font-semibold text-gray-900`}>
+            Planificación Avanzada
+          </h1>
+          {!isEfficiencyTab && (
+            <p className="text-sm text-gray-600">
+              Gestione órdenes de trabajo y asignaciones a líneas de producción
+            </p>
+          )}
         </div>
 
         {/* Message Display */}
@@ -110,7 +123,7 @@ export default function AdvancedPlanningPage() {
         )}
 
         {/* Tabs */}
-        <div className="mb-6 flex flex-wrap gap-2 border-b">
+        <div className={`${isEfficiencyTab ? "mb-3" : "mb-6"} flex flex-wrap gap-2 border-b`}>
           {tabs.map(
             (tab) =>
               tab.visible && (
@@ -144,14 +157,16 @@ export default function AdvancedPlanningPage() {
           {/* Read-only order status view (assignment happens in Plan Board) */}
           {activeTab === "status" && <OrderStatus />}
 
+          {/* Daily line efficiency — read-only, auto-refreshes every 5 min */}
+          {activeTab === "efficiency" && <SkyrinaDashboard embedded />}
+
           {activeTab === "cut" && <CutOrders />}
 
           {/* Non-working days: block them here, the Plan Board honours them */}
           {activeTab === "holidays" && <HolidaysManager />}
 
-          {/* Per-style efficiency changes (queued for CEO approval; applied to
-              the Plan Board capacity once approved). */}
-          {activeTab === "efficiency" && <ChangeEfficiency />}
+          {/* Efficiency changes are made per style / line from the Plan Board's
+              style standard form (sent to the CEO for approval). */}
 
           {activeTab === "list" && (
             <WorkOrderList

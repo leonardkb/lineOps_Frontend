@@ -299,27 +299,51 @@ export default function CutPlanning() {
   const setMarkerField = (id, field, value) =>
     setMarkers((ms) => ms.map((m) => (m.id === id ? { ...m, [field]: value } : m)));
 
+  // Piezas por panel de la PRIMERA talla de la marcada: sirve de referencia
+  // para autocompletar las demás tallas. (La primera talla es lines[0].)
+  const firstPerPanel = (m) => (m.lines[0]?.perPanel ?? "");
+
+  // Al capturar paneles en una talla que NO es la primera y que todavía no
+  // tiene piezas por panel, se copia el valor de la primera talla. El usuario
+  // puede escribirlo distinto después: sólo autocompletamos cuando está vacío.
+  const withInheritedPerPanel = (m, li, line) => {
+    if (li === 0) return line;                 // la primera talla es la referencia
+    if (num(line.panels) <= 0) return line;    // sin paneles no hay nada que planear
+    if (num(line.perPanel) > 0) return line;   // respeta un valor ya capturado
+    const ref = firstPerPanel(m);
+    if (num(ref) <= 0) return line;            // la primera talla aún no tiene piezas
+    return { ...line, perPanel: String(ref) };
+  };
+
   const setMarkerLine = (id, li, field, value) =>
     setMarkers((ms) =>
-      ms.map((m) =>
-        m.id === id
-          ? { ...m, lines: m.lines.map((l, i) => (i === li ? { ...l, [field]: value } : l)) }
-          : m
-      )
+      ms.map((m) => {
+        if (m.id !== id) return m;
+        return {
+          ...m,
+          lines: m.lines.map((l, i) => {
+            if (i !== li) return l;
+            const next = { ...l, [field]: value };
+            // Sólo autocompletamos piezas/panel cuando el cambio es en "paneles".
+            return field === "panels" ? withInheritedPerPanel(m, li, next) : next;
+          }),
+        };
+      })
     );
 
   const bumpLinePanels = (id, li, delta) =>
     setMarkers((ms) =>
-      ms.map((m) =>
-        m.id === id
-          ? {
-              ...m,
-              lines: m.lines.map((l, i) =>
-                i === li ? { ...l, panels: String(Math.max(0, num(l.panels) + delta)) } : l
-              ),
-            }
-          : m
-      )
+      ms.map((m) => {
+        if (m.id !== id) return m;
+        return {
+          ...m,
+          lines: m.lines.map((l, i) => {
+            if (i !== li) return l;
+            const next = { ...l, panels: String(Math.max(0, num(l.panels) + delta)) };
+            return withInheritedPerPanel(m, li, next);
+          }),
+        };
+      })
     );
 
   const cutByTalla = useMemo(() => {
