@@ -9,8 +9,13 @@ import { API_URL, TALLAS } from "../../lib/masterCodeCatalog";
      order={order}          // a row from GET /api/work-orders (must include `lines`)
      apiOnline={bool}
      onClose={fn}
-     onSaved={(updatedOrder, originalOrder) => {}}
+     onSaved={(updatedOrder, originalOrder, createdOrders) => {}}
   />
+
+  ITEM CODE = UNA ORDEN: si las líneas llevan item codes distintos, al guardar
+  esta orden se queda con uno (el que ya tenía; si ninguno, el primero) y cada
+  item code adicional se crea como una PO nueva. createdOrders trae esas POs
+  nuevas (array vacío si no hubo separación) para agregarlas a la lista.
 
   Saves through PUT /api/production-orders/:id, which rewrites work_order_lines
   in a transaction and recomputes everything the breakdown owns: quantity, color
@@ -232,7 +237,9 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
 
   const [styleDescription, setStyleDescription] = useState(order?.style_description || "");
   const [status, setStatus] = useState(order?.status || "pending");
+  const [season, setSeason] = useState(order?.season || "");
   const [samMinutes, setSamMinutes] = useState(num(order?.sam_minutes));
+  const [techPackNo, setTechPackNo] = useState(order?.tech_pack_no || "");
   const [warehouseStock, setWarehouseStock] = useState(num(order?.warehouse_stock));
   const [extraQuantity, setExtraQuantity] = useState(num(order?.extra_quantity));
   const [totalToProduce, setTotalToProduce] = useState(num(order?.total_to_produce));
@@ -289,6 +296,11 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
   };
   const clearPhoto = () => { setPhotoFile(null); setPhotoPreview(""); setRemovePhoto(true); };
   const undoPhotoChange = () => { setPhotoFile(null); setPhotoPreview(""); setRemovePhoto(false); };
+
+  // Temporada: texto libre (ej. "SP26", "FA25"). Se guarda en mayúsculas y
+  // sin espacios al inicio/final; vacío = sin temporada.
+  const handleSeasonChange = (e) => setSeason(e.target.value.toUpperCase().slice(0, 40));
+  const seasonOut = season.trim() || null;
 
   // ------- row helpers --------------------------------------------------
   const setRowField = (i, key, val) =>
@@ -408,7 +420,35 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
     return out;
   }, [rows, sizes]);
 
-  const orderedQty = cells.reduce((s, c) => s + c.quantity, 0);
+  // ---- separación por item code (misma regla que el servidor) ----------
+  // Se queda en ESTA orden el primer item code que ya tenía; si ninguno, el
+  // primero capturado. Los demás salen a POs nuevas al guardar.
+  const originalItemCodes = useMemo(
+    () => new Set((order?.lines || []).map((l) => (l.itemCode || "").trim().toUpperCase())),
+    [order]
+  );
+  const { keptCells, splitOff } = useMemo(() => {
+    const groups = new Map();
+    for (const c of cells) {
+      const k = c.itemCode || "";
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(c);
+    }
+    const keys = [...groups.keys()];
+    const keepKey = keys.find((k) => originalItemCodes.has(k)) ?? keys[0];
+    return {
+      keptCells: keepKey === undefined ? [] : groups.get(keepKey),
+      splitOff: keys.filter((k) => k !== keepKey).map((k) => ({
+        itemCode: k,
+        lines: groups.get(k).length,
+        qty: groups.get(k).reduce((s, c) => s + c.quantity, 0),
+        colors: [...new Set(groups.get(k).map((c) => c.color))].join(", "),
+      })),
+    };
+  }, [cells, originalItemCodes]);
+
+  // Cantidades y encabezado de ESTA orden: solo su item code.
+  const orderedQty = keptCells.reduce((s, c) => s + c.quantity, 0);
   const suggestedTotal = useMemo(() => {
     const w = parseFloat(warehouseStock) || 0;
     const x = parseFloat(extraQuantity) || 0;
@@ -418,14 +458,14 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
   const effectiveTotal = totalManual ? totalToProduce : String(suggestedTotal);
 
   // What the server will store on the work_orders header (first line wins).
-  const firstOf = (k) => cells.find((c) => c[k] != null && c[k] !== "")?.[k] ?? null;
+  const firstOf = (k) => keptCells.find((c) => c[k] != null && c[k] !== "")?.[k] ?? null;
   const preview = {
-    colors: [...new Set(cells.map((c) => c.color))].join(", "),
-    customerPo: [...new Set(cells.map((c) => c.customerPo).filter(Boolean))].join(", "),
-    itemCodes: [...new Set(cells.map((c) => c.itemCode).filter(Boolean))].join(", "),
+    colors: [...new Set(keptCells.map((c) => c.color))].join(", "),
+    customerPo: [...new Set(keptCells.map((c) => c.customerPo).filter(Boolean))].join(", "),
+    itemCodes: [...new Set(keptCells.map((c) => c.itemCode).filter(Boolean))].join(", "),
     date: firstOf("commitmentDate"),
-    fabricList: mergeFabrics(cells),
-    yield: mergeFabrics(cells).find((f) => f.yield != null && f.yield !== "")?.yield ?? null,
+    fabricList: mergeFabrics(keptCells),
+    yield: mergeFabrics(keptCells).find((f) => f.yield != null && f.yield !== "")?.yield ?? null,
   };
 
   const activeRows = rows.filter((r) => r.color.trim());
@@ -459,6 +499,12 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
   const valid = problems.length === 0;
 
   const selectedCustomer = customers.find((c) => String(c.id) === String(customerId));
+  // Tech pack solo para Nike. Mientras el catálogo carga se usa el nombre que
+  // ya trae la orden, para no borrar el tech pack por accidente.
+  const isNike = /nike/i.test(
+    selectedCustomer ? `${selectedCustomer.name || ""} ${selectedCustomer.code || ""}` : (order?.customer_name || "")
+  );
+  const techPackOut = isNike ? (techPackNo.trim().toUpperCase() || null) : null;
 
   // ------- save ---------------------------------------------------------
   const handleSave = async () => {
@@ -473,7 +519,9 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
         customer_name: selectedCustomer ? selectedCustomer.name : order?.customer_name,
         style_description: styleDescription,
         status,
+        season: seasonOut,
         sam_minutes: samMinutes === "" ? order?.sam_minutes : parseFloat(samMinutes) || 0,
+        tech_pack_no: techPackOut,
         master_code_photo_url: photoFile
           ? (photoPreview || order?.master_code_photo_url || null)
           : (removePhoto ? null : (order?.master_code_photo_url || null)),
@@ -482,7 +530,7 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
         extra_quantity: extraQuantity === "" ? order?.extra_quantity : parseFloat(extraQuantity) || 0,
         total_to_produce: total,
         color: preview.colors || null,
-        estilo: cells[0]?.estilo || order?.estilo || null,
+        estilo: keptCells[0]?.estilo || order?.estilo || null,
         customer_po: preview.customerPo || null,
         commitment_date: preview.date,
         fabric_details: preview.fabricList,
@@ -491,11 +539,11 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
         fabric_supplier: preview.fabricList[0]?.name || null,
         fabric_code: preview.fabricList[0]?.code || null,
         yield_per_piece: preview.yield,
-        lines: cells.map((c) => ({ ...c })),
+        lines: keptCells.map((c) => ({ ...c })),
       };
 
       if (!apiOnline) {
-        onSaved?.(merged, order);
+        onSaved?.(merged, order, []);
         return;
       }
 
@@ -515,11 +563,13 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
         uploadedPhotoKey = pres.photoKey;
       }
 
-      const body = { styleDescription, status, totalToProduce: total, lines: cells };
+      const body = { styleDescription, status, season: seasonOut, totalToProduce: total, lines: cells };
       if (customerId) body.customerId = Number(customerId);
       if (warehouseStock !== "") body.warehouseStock = parseFloat(warehouseStock) || 0;
       if (extraQuantity !== "") body.extraQuantity = parseFloat(extraQuantity) || 0;
       if (samMinutes !== "") body.samMinutes = parseFloat(samMinutes) || 0;
+      // Siempre se envía: si la orden dejó de ser de Nike, se limpia.
+      body.techPackNo = techPackOut;
       if (uploadedPhotoKey) body.photoKey = uploadedPhotoKey;
       else if (removePhoto) body.removePhoto = true;
 
@@ -538,7 +588,7 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo guardar la orden");
 
-      onSaved?.({ ...merged, ...(data.workOrder || {}) }, order);
+      onSaved?.({ ...merged, ...(data.workOrder || {}) }, order, data.createdOrders || []);
     } catch (e) {
       setError(e.message || "Error al guardar");
     } finally {
@@ -588,6 +638,24 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
                   {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </Field>
+              <Field label="Temporada" hint="Opcional · ej. SP26, FA25. Déjalo vacío para quitarla.">
+                <input
+                  value={season}
+                  onChange={handleSeasonChange}
+                  placeholder="Ej. SP26"
+                  className={`${fieldCls} uppercase`}
+                />
+              </Field>
+              {isNike && (
+                <Field label="N° Tech pack Nike" hint="Opcional · del estilo de esta orden.">
+                  <input
+                    value={techPackNo}
+                    onChange={(e) => setTechPackNo(e.target.value.toUpperCase().slice(0, 40))}
+                    placeholder="Ej. TP-123456"
+                    className={`${fieldCls} font-mono uppercase`}
+                  />
+                </Field>
+              )}
             </div>
             <Field label="Descripción del estilo">
               <textarea
@@ -719,7 +787,7 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
                         <div className="flex items-center gap-1 shrink-0">
                           <button type="button" onClick={() => duplicateRow(i)}
                             title={(row.itemCode || "").trim()
-                              ? "Duplicar para otro item code (mismo color, estilo, telas y entrega)"
+                              ? "Duplicar para otro item code — al guardar se crea como una orden nueva"
                               : "Duplicar línea (mismas telas y entrega)"}
                             className="p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700">
                             <Copy size={14} />
@@ -917,6 +985,26 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
             </div>
           </Section>
 
+          {splitOff.length > 0 && (
+            <div className="rounded-lg bg-indigo-50 border border-indigo-200 p-3 text-xs text-indigo-800">
+              <p className="font-semibold mb-1 flex items-center gap-1">
+                <AlertCircle size={13} /> Al guardar se crearán {splitOff.length} orden(es) nueva(s), una por item code
+              </p>
+              <p className="mb-1.5 text-indigo-700">
+                Esta orden se queda con {keptCells[0]?.itemCode ? <>el item <b className="font-mono">{keptCells[0].itemCode}</b></> : "las líneas sin item code"}
+                {" "}({orderedQty.toLocaleString()} pzs). El stock y los extras se quedan en esta orden.
+              </p>
+              <ul className="list-disc list-inside space-y-0.5">
+                {splitOff.map((g) => (
+                  <li key={g.itemCode || "-"}>
+                    {g.itemCode ? <>item <b className="font-mono">{g.itemCode}</b></> : "sin item code"}
+                    {" "}· {g.colors} · {g.qty.toLocaleString()} pzs
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {problems.length > 0 && (
             <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
               <p className="font-semibold mb-1 flex items-center gap-1"><AlertCircle size={13} /> Falta por corregir</p>
@@ -937,7 +1025,9 @@ export default function WorkOrderEditModal({ order, apiOnline = true, onClose, o
         <div className="px-6 py-4 border-t border-slate-100 rounded-b-2xl flex items-center justify-between shrink-0">
           <span className={`inline-flex items-center gap-1 text-xs ${valid ? "text-emerald-600" : "text-slate-400"}`}>
             {valid ? <Check size={14} /> : <AlertCircle size={14} />}
-            {valid ? `${cells.length} línea(s) · ${orderedQty.toLocaleString()} pzs` : "Revisa los pendientes"}
+            {valid
+              ? `${keptCells.length} línea(s) · ${orderedQty.toLocaleString()} pzs${splitOff.length ? ` · +${splitOff.length} orden(es) nueva(s)` : ""}`
+              : "Revisa los pendientes"}
           </span>
           <div className="flex gap-2">
             <button type="button" onClick={onClose}

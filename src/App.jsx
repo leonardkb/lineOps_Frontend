@@ -30,13 +30,13 @@ import PreOrdenWizard from "./components/merchant/PreOrdenWizard";
 import TicketCard from "./components/cutting/TicketCard";
 import SupermarketPage from "./pages/supermarket/SupermarketPage";
 import PlannerAnalytics from "./components/planner/PlannerAnalytics";
-import VerificadorPage from "./pages/Verificadorpage";
 import BomDashboard from "./pages/merchant/BomDashboard";
 import ClientCatalogPage from "./pages/merchant/ClientCatalogPage";
 import ProductCatalogPage from "./pages/merchant/ProductCatalogPage";
 import BillOfMaterialsPage from "./pages/merchant/Billofmaterialspage";
 import StyleOrderWizard from "./components/merchant/StyleOrderWizard";
-
+import ITControlPanel from "./components/IT/ITControlPanel";
+import VerificadorSection from "./components/verificador/VerificadorSection";
 export default function App() {
   return (
     <Router>
@@ -71,7 +71,7 @@ export default function App() {
 
         <Route path='/supermarket-plan' element={<SupermarketPage/>} /> {/*supermarket plan route */}
         <Route path='/planner-analytics' element={<PlannerAnalytics/>} /> {/*planner analytics route */}
-        <Route path='/verificador' element={<VerificadorPage/>} /> {/*verificador route */}
+        
         <Route path='/bom-dashboard/*' element={<BomDashboard/>} /> {/*bom dashboard route */}
         <Route path='/clientes'  element={<ClientCatalogPage/>} /> {/*clientes route */}
         <Route path='/products' element={<ProductCatalogPage/>} /> {/*products route */}
@@ -81,8 +81,8 @@ export default function App() {
         <Route path="/fabric-warehouse/:tab" element={<FabricWarehouse />} /> {/*fabric warehouse sections */}
 
         <Route path='/style-order' element={<StyleOrderWizard/>} /> {/*style order wizard route */}
-
-
+        <Route path='/verificador/*' element={<VerificadorSection/>} /> {/*verificador route */}
+        <Route path="/it-control" element={<ITControlPanel />} /> {/* IT control route */}
         <Route path="/corte/ticket" element={<TicketCard />} />
       </Routes>
     </Router>

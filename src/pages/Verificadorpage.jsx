@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import NavVerificador from "../components/NavVerificador";
 /**
  * VerificadorPage
  * -----------------------------------------------------------------------------
@@ -23,6 +22,9 @@ import NavVerificador from "../components/NavVerificador";
  *
  * Nota backend: estos endpoints usan el middleware `requireVerificador`, que
  * ya incluye el rol "verificador".
+ *
+ * El navbar (con las pestañas) lo pinta VerificadorSection.jsx; esta página es
+ * solo el contenido de la pestaña "Corrección de producción".
  * -----------------------------------------------------------------------------
  */
 
@@ -46,7 +48,8 @@ function normalizeRole(role) {
 }
 
 // Roles que tienen permiso de verificar/corregir. Debe coincidir con la lista
-// del backend (requirePlanner) para que el guardado no devuelva 403.
+// del backend (requireVerificador en server.js) para que el guardado no devuelva
+// 403. Los nombres van normalizados (sin guiones bajos): quality_head -> qualityhead.
 const ALLOWED_ROLES = new Set([
   "verificador",
   "planner",
@@ -56,6 +59,8 @@ const ALLOWED_ROLES = new Set([
   "skyrina",
   "master",
   "inspector",
+  "qualityhead",
+  "admin",
 ]);
 
 export default function VerificadorPage() {
@@ -415,8 +420,7 @@ export default function VerificadorPage() {
 
   // ========== render ==========
   return (
-    <div className="min-h-screen bg-gray-50">
-      <NavVerificador />
+    <div>
       {/* Barra superior mínima (sin depender de la nav del líder de línea) */}
       <div className="border-b bg-white">
         <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 flex items-center justify-between">

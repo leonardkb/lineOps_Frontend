@@ -657,6 +657,15 @@ const getRowsFromData = () => {
   const handleCopyRun = async () => {
     if (!copyDialog.run || !newDate) return;
 
+    // Sin orden de trabajo no se puede crear la línea: debe revisarse con el
+    // planner para un cambio de estilo urgente.
+    if (!selectedWorkOrderId) {
+      setMessage(
+        "❌ La línea no se puede crear. Por favor revise con el planner para un cambio de estilo urgente."
+      );
+      return;
+    }
+
     setCopyLoading(true);
     setMessage("");
     try {
@@ -768,6 +777,11 @@ const getRowsFromData = () => {
     }
     return Array.from(map.values());
   })();
+
+  // "Sin orden de trabajo" seleccionado con una fecha ya elegida: la copia
+  // queda bloqueada y se muestra la tarjeta de aviso.
+  const copyBlockedNoWorkOrder =
+    copyDialog.open && !!newDate && !loadingCopyWorkOrders && !selectedWorkOrderId;
 
   // Work order currently chosen in the copy dialog (full object, not just id).
   // When chosen, the duplicated run takes the order's style (tipo+modelo+
@@ -1153,10 +1167,28 @@ const getRowsFromData = () => {
               ) : null}
             </label>
 
+            {/* Aviso: sin orden de trabajo la línea no se puede crear */}
+            {copyBlockedNoWorkOrder && (
+              <div
+                role="alert"
+                className="mb-4 flex gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3"
+              >
+                <span className="text-lg leading-none" aria-hidden="true">⚠️</span>
+                <div>
+                  <p className="text-sm font-semibold text-red-800">
+                    La línea no se puede crear
+                  </p>
+                  <p className="mt-1 text-xs text-red-700">
+                    Por favor revise con el planner para un cambio de estilo urgente.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Vista previa. Al elegir una orden, el estilo se arma con
                 tipo+modelo+correlativo y el color se guarda por separado, de modo
                 que el mismo estilo en otro color queda como una corrida distinta. */}
-            {copyDialog.run && (
+            {copyDialog.run && !copyBlockedNoWorkOrder && (
               <div className="mb-4 rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-600">
                 Se creará la corrida con estilo{" "}
                 <span className="font-semibold text-gray-900">
@@ -1194,7 +1226,7 @@ const getRowsFromData = () => {
               </button>
               <button
                 onClick={handleCopyRun}
-                disabled={!newDate || copyLoading}
+                disabled={!newDate || copyLoading || copyBlockedNoWorkOrder}
                 className="px-4 py-2 text-sm bg-gray-900 text-white rounded-xl hover:bg-gray-800 disabled:opacity-50"
               >
                 {copyLoading ? "Copiando..." : "Copiar"}

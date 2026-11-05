@@ -2,10 +2,11 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { format, addDays, differenceInDays, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, startOfMonth, endOfMonth, startOfYear, addMonths, eachWeekOfInterval, eachMonthOfInterval, getWeek } from "date-fns";
 import { es } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Package, Loader2, Check, AlertCircle, GripVertical, Search, X, Send, Lock, Unlock, CalendarDays, FileSpreadsheet, Download, Bell, MoreHorizontal, Plus, RotateCcw, Settings, Scissors, SlidersHorizontal } from "lucide-react";
+import { ChevronLeft, ChevronRight, Package, Loader2, Check, AlertCircle, GripVertical, Search, X, Send, Lock, Unlock, CalendarDays, FileSpreadsheet, Download, Bell, MoreHorizontal, Plus, RotateCcw, Settings, Scissors, SlidersHorizontal, Zap } from "lucide-react";
 import { API_URL } from "../../lib/masterCodeCatalog";
 import { colorForWO, WO_PALETTE, buildStyleColorMap } from "../../lib/workOrderColors";
 import { useDayBalances, cellKey } from "./PendingBalances";
+import UrgentChangeModal from "./UrgentChangeModal";
 import { StyleParamsFormModal, StyleStandardsListModal, normStyle, targetOfParams, lineKey, effKey, paramsForLine } from "./StyleStandards";
 // ReplanLinesModal is read from the module namespace (not a named import) so the
 // board still loads when StyleStandards.jsx doesn't export it yet; in that case
@@ -392,6 +393,11 @@ export default function PlanBoard({
   }, [reviewOnDrop]);
   const [loading, setLoading] = useState(true);
   const [selectedAssignment, setSelectedAssignment] = useState(null);
+  // ⚡ Cambio urgente (semanas bloqueadas por el CEO). urgentFor = casilla en
+  // el modal; urgentLog = Map(assignment id -> ultimo cambio) para pintar ⚡.
+  const [urgentFor, setUrgentFor] = useState(null);
+  const [urgentLog, setUrgentLog] = useState(() => new Map());
+  const [canUrgent, setCanUrgent] = useState(false);
   const [hovered, setHovered] = useState(null); // { assignment, x, y }
   // Resaltar orden: al pasar el cursor sobre un bloque se resaltan TODOS los
   // bloques de esa misma orden (en todas las líneas y días) y el resto se
@@ -1146,6 +1152,21 @@ export default function PlanBoard({
     return s;
   }, [merchantPlan]);
   const isPreOrder = (woId, color) => preOrderKeys.has(planKey(woId, color));
+  // Llaves separadas por id y por folio, para que un folio numérico no choque
+  // con el id de otra orden (las dos van mezcladas en preOrderKeys).
+  const { preOrderIdKeys, preOrderNoKeys } = useMemo(() => {
+    const ids = new Set();
+    const nos = new Set();
+    for (const r of merchantPlan) {
+      if (r.pre_order_id != null || !r.is_pre_order) continue;
+      if (r.work_order_id != null) ids.add(planKey(r.work_order_id, r.color));
+      if (r.work_order_no) nos.add(planKey(r.work_order_no, r.color));
+    }
+    return { preOrderIdKeys: ids, preOrderNoKeys: nos };
+  }, [merchantPlan]);
+  const isFlaggedPreOrderAssignment = (a) =>
+    (a.work_order_id != null && preOrderIdKeys.has(planKey(a.work_order_id, a.color))) ||
+    (!!a.work_order_no && preOrderNoKeys.has(planKey(a.work_order_no, a.color)));
 
   // ---- pre-órdenes del merchant (PRE####) --------------------------------
   // Filas del plan con pre_order_id: pedidos que el merchant ya comprometió
@@ -2048,6 +2069,30 @@ export default function PlanBoard({
   const loadWeekLocksRef = useRef(loadWeekLocks);
   loadWeekLocksRef.current = loadWeekLocks;
 
+  // ⚡ Bitácora de cambios urgentes: marca las casillas y dice si el rol puede.
+  const loadUrgentLog = async () => {
+    if (dataOverride) return;
+    const r = await getJSON("/api/plan-urgent-changes", { retries: 1, timeoutMs: 15000 });
+    if (!r.ok || !r.data?.success) return;
+    const m = new Map();
+    // Vienen del más nuevo al más viejo: el primero por casilla es el vigente.
+    (r.data.changes || []).forEach((c) => {
+      if (c.target_assignment_id != null && !m.has(Number(c.target_assignment_id))) m.set(Number(c.target_assignment_id), c);
+    });
+    setUrgentLog(m);
+    setCanUrgent(!!r.data.canUrgent);
+  };
+  useEffect(() => {
+    loadUrgentLog();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataOverride]);
+  const urgentOf = (a) => (a && !a.is_hold ? urgentLog.get(Number(a.id)) || null : null);
+  // Una casilla admite cambio urgente si está en semana bloqueada, es de hoy
+  // en adelante y no está terminada. El servidor lo vuelve a validar.
+  const canUrgentChange = (a) =>
+    canUrgent && !dataOverride && !readOnly && !!a && !a.is_hold && !!weekLockOf(a.assigned_date)
+    && !isLockedCell(a) && !["completed", "cancelled", "rejected"].includes(a.status);
+
   // true (y avisa) cuando el tablero está bloqueado. Se usa al inicio de cada
   // acción que cambia el tablero; el servidor y la base lo hacen cumplir igual.
   const boardLockedGuard = () => {
@@ -2158,9 +2203,11 @@ export default function PlanBoard({
   //   2. POs reales marcadas como pre-orden por el merchant (is_pre_order):
   //      son line_assignments, no holds, y la vista Semanal también les pone
   //      el sello PRE (aggFor -> hasPre). Antes se escapaban del candado.
-  //   3. pre-órdenes PRE#### que el merchant planeó en esa semana y que aún
-  //      tienen piezas sin reservar (la bolsa de la semana).
-  // Con UNA sola pre-orden la semana ya no se puede bloquear.
+  //   (3. YA NO cuenta: las PRE#### que el merchant planeó en la semana pero que
+  //       siguen en la bolsa SIN reservar. No están en el tablero, así que no
+  //       hay nada que el candado vaya a congelar; antes bloqueaban semanas que
+  //       se veían limpias. Se pueden reservar en otra semana libre.)
+  // Con UNA sola pre-orden EN EL TABLERO la semana ya no se puede bloquear.
   const preOrdersByWeek = useMemo(() => {
     const m = new Map();
     const add = (wk, label) => {
@@ -2173,20 +2220,17 @@ export default function PlanBoard({
       if (!(Number(h.quantity) > 0)) continue;
       add(weekKeyOf(h.assigned_date), h.pre_order_no || `PRE${h.pre_order_id}`);
     }
-    // 2. POs marcadas como pre-orden, ya asignadas a un día
+    // 2. POs marcadas como pre-orden, ya asignadas a un día. Se compara id con id
+    //    y folio con folio: con la llave mezclada, un folio numérico ("1955")
+    //    chocaba con el id de OTRA orden y marcaba como PRE una PO normal.
     for (const a of assignments || []) {
       if (!a.assigned_date || ["cancelled", "rejected"].includes(a.status)) continue;
-      if (!(isPreOrder(a.work_order_id, a.color) || isPreOrder(a.work_order_no, a.color))) continue;
+      if (!isFlaggedPreOrderAssignment(a)) continue;
       add(weekKeyOf(a.assigned_date), a.work_order_no || `PO ${a.work_order_id}`);
-    }
-    // 3. PRE#### planeadas por el merchant en la semana, aún por reservar
-    for (const j of preOrderJobs || []) {
-      if (!j.week || !(j.remaining > 0)) continue;
-      add(weekKeyOf(j.week), j.work_order_no || `PRE${j.preOrderId}`);
     }
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [holds, assignments, preOrderKeys, preOrderJobs]);
+  }, [holds, assignments, preOrderIdKeys, preOrderNoKeys]);
   const preOrdersInWeek = (weekKey) => [...(preOrdersByWeek.get(weekKey) || [])].sort();
 
   const toggleWeekLock = async (weekKey) => {
@@ -6579,6 +6623,15 @@ export default function PlanBoard({
                                   </>
                                 )}
                                 {isStart && <span className="absolute inset-y-0 left-0 w-1 bg-black/25" />}
+                                {urgentOf(a) && (
+                                  <span
+                                    className="pointer-events-none absolute top-0 right-0 z-20 bg-orange-600 text-white rounded-bl-[3px] flex items-center justify-center"
+                                    style={{ width: 9, height: 9 }}
+                                    aria-label="Cambio urgente"
+                                  >
+                                    <Zap className="w-[7px] h-[7px]" strokeWidth={3} fill="currentColor" />
+                                  </span>
+                                )}
                                 {/* Etiqueta legible en la casilla (supermercado):
                                     OT + PO cliente + cantidad asignada. Un panel
                                     casi blanco sobre el color del bloque mantiene
@@ -7127,6 +7180,29 @@ export default function PlanBoard({
         </div>
       )}
 
+      {/* ⚡ Cambio urgente en semana bloqueada */}
+      {urgentFor && (
+        <UrgentChangeModal
+          assignment={urgentFor}
+          workOrders={workOrders}
+          assignments={assignments}
+          weekLock={weekLockOf(urgentFor.assigned_date)}
+          weekLabel={weekLabelOf(weekKeyOf(urgentFor.assigned_date))}
+          produced={balanceOf(urgentFor)?.produced || 0}
+          pendingBalances={pendingBalanceGroups.groups.flatMap((g) => g.rows)}
+          onClose={() => setUrgentFor(null)}
+          onMissingStyle={(data, retry) => handleMissingStyle(data, retry, "Cambio urgente")}
+          onDone={(data) => {
+            setUrgentFor(null);
+            showToast(data.message || "⚡ Cambio urgente aplicado.");
+            if (data.warnings?.length) setTimeout(() => showToast(`⚠️ ${data.warnings.join(" ")}`, true), 4200);
+            fetchData({ silent: true });
+            balances.reload({ silent: true });
+            loadUrgentLog();
+          }}
+        />
+      )}
+
       {/* Assignment Details Modal */}
       {selectedAssignment && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSelectedAssignment(null)}>
@@ -7151,6 +7227,18 @@ export default function PlanBoard({
                     <ModalRow k="Inicio" v={fmtDMY(selectedAssignment.planned_start_date)} />
                     <ModalRow k="Fin" v={fmtDMY(selectedAssignment.planned_end_date)} />
                     <ModalRow k="Estado" v={selectedAssignment.status} />
+                    {(() => {
+                      const u = urgentOf(selectedAssignment);
+                      if (!u) return null;
+                      return (
+                        <div className="mt-1 rounded-lg border border-orange-200 bg-orange-50 px-2 py-1.5 text-orange-900">
+                          <div className="font-semibold flex items-center gap-1"><Zap className="w-3 h-3" /> Cambio urgente</div>
+                          <div>{u.source_work_order_no}{u.source_color ? ` ${u.source_color}` : ""} → {u.target_work_order_no}{u.target_color ? ` ${u.target_color}` : ""} · {Math.round(Number(u.moved_qty)).toLocaleString()} pzas</div>
+                          <div className="text-orange-800">{u.reason}</div>
+                          <div className="text-orange-700/80">{u.changed_by_name || "—"} · {fmtDMY(u.created_at)}</div>
+                        </div>
+                      );
+                    })()}
                     {selectedAssignment.status === "completed" && selectedAssignment.produced_quantity != null && (
                       <div className="flex justify-between gap-3">
                         <span className="text-gray-500">Producido al cierre</span>
@@ -7279,6 +7367,16 @@ export default function PlanBoard({
                 const confirmableOfOrder = sameOrderOnLine.filter((a) => !isLockedCell(a));
                 return (
                   <div className="flex flex-wrap gap-2">
+                    {canUrgentChange(sel) && (
+                      <button
+                        disabled={dropBusy || boardLock.locked}
+                        title={boardLock.locked ? "El tablero completo está bloqueado." : "Cambia el color o el estilo de esta casilla sin desbloquear la semana."}
+                        onClick={() => { setUrgentFor(sel); setSelectedAssignment(null); }}
+                        className="px-2.5 py-1.5 text-[12px] bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 inline-flex items-center gap-1"
+                      >
+                        <Zap className="w-3.5 h-3.5" /> Cambio urgente
+                      </button>
+                    )}
                     {confirmableOfOrder.length > 0 && (
                       <button
                         disabled={dropBusy}

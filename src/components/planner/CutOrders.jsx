@@ -1126,6 +1126,172 @@ const pct1 = (v) => `${(Math.round(num(v) * 10) / 10).toLocaleString()}%`;
 const shortDay = (ymd) => (ymd ? `${String(ymd).slice(8, 10)}/${String(ymd).slice(5, 7)}` : "—");
 const progressColor = (p) => (p >= 100 ? "#16a34a" : p >= 75 ? "#65a30d" : p >= 40 ? "#f59e0b" : p > 0 ? "#f97316" : "#94a3b8");
 
+// ---------------------------------------------------------------------------
+// Equivalencia de tallas: talla numérica ↔ talla en letra (mismo catálogo
+// que el paso "Tallas y colores" de la orden de trabajo).
+// Si se agrega una talla, se agrega aquí y el panel lateral la toma sola.
+// ---------------------------------------------------------------------------
+const SIZE_EQUIV = [
+  { numero: "130", letra: "XXXS" },
+  { numero: "132", letra: "XXS" },
+  { numero: "134", letra: "XS" },
+  { numero: "136", letra: "S" },
+  { numero: "138", letra: "M" },
+  { numero: "140", letra: "L" },
+  { numero: "142", letra: "XL" },
+  { numero: "144", letra: "XXL" },
+  { numero: "146", letra: "XXXL" },
+  { numero: "148", letra: "S-T" },
+  { numero: "150", letra: "M-T" },
+  { numero: "152", letra: "L-T" },
+  { numero: "154", letra: "XL-T" },
+  { numero: "156", letra: "2XL-T" },
+  { numero: "004", letra: "I-XS" },
+  { numero: "006", letra: "S" },
+  { numero: "008", letra: "M" },
+  { numero: "010", letra: "L" },
+];
+const normTalla = (t) => String(t ?? "").toUpperCase().replace(/[\s\-_.]/g, "");
+// Número → fila: también acepta "4" por "004".
+// Letra → fila: solo si la letra es de UNA sola talla. S, M y L existen en
+// 136/138/140 y en 006/008/010, así que una talla escrita "S" no se adivina.
+const SIZE_EQUIV_INDEX = (() => {
+  const m = new Map();
+  const letterCount = new Map();
+  for (const row of SIZE_EQUIV) {
+    const k = normTalla(row.letra);
+    letterCount.set(k, (letterCount.get(k) || 0) + 1);
+  }
+  for (const row of SIZE_EQUIV) {
+    m.set(normTalla(row.numero), row);
+    m.set(String(parseInt(row.numero, 10)), row);
+    const k = normTalla(row.letra);
+    if (letterCount.get(k) === 1) m.set(k, row);
+  }
+  return m;
+})();
+// Fila de equivalencia de una talla (escrita en número o en letra), o null.
+const sizeEquivOf = (talla) => SIZE_EQUIV_INDEX.get(normTalla(talla)) || null;
+// La "otra" forma de la talla: 134 → XS, XS → 134.
+const otherSizeOf = (talla) => {
+  const row = sizeEquivOf(talla);
+  if (!row) return "";
+  return normTalla(talla) === normTalla(row.letra) ? row.numero : row.letra;
+};
+
+// Etiqueta pequeña con la equivalencia, igual que en las tarjetas de marcada.
+function SizeBadge({ talla, className = "" }) {
+  const other = otherSizeOf(talla);
+  if (!other) return null;
+  return (
+    <span className={`inline-flex items-center justify-center rounded border border-gray-200 bg-white px-1.5 text-[10px] font-medium text-gray-700 leading-4 whitespace-nowrap ${className}`}
+      title={`Talla ${talla} = ${other}`}>
+      {other}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Consumo de tela del corte. Es un consumo ESTIMADO: rendimiento (m por pieza)
+// × piezas. No hay metros medidos en la mesa, así que planeado, consumido y
+// por consumir salen de las mismas piezas que ya muestra el panel.
+// ---------------------------------------------------------------------------
+const fmtM = (v, d = 0) => num(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+const fmtYield = (v) => num(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+
+// Telas con su rendimiento. Cortes viejos no traen `fabrics`: se usa la tela
+// del encabezado y el rendimiento del corte (o largo total ÷ piezas planeadas).
+function consumptionFabrics(fabrics, o, co, planned) {
+  const list = fabrics.length
+    ? fabrics
+    : (o.fabric || co.fabric || o.total_length != null || co.total_length != null)
+      ? [{ name: o.fabric || co.fabric, code: o.fabric_code || co.fabric_code,
+           yield: co.yield_per_piece != null && co.yield_per_piece !== "" ? num(co.yield_per_piece) : null,
+           total_length: o.total_length ?? (co.total_length != null ? num(co.total_length) : null) }]
+      : [];
+  return list.map((f) => {
+    let y = f.yield != null && num(f.yield) > 0 ? num(f.yield) : null;
+    if (y == null && f.total_length != null && planned > 0) y = num(f.total_length) / planned;
+    return { ...f, yield: y };
+  });
+}
+
+// Metros de tela de una marcada: Σ rendimiento de cada tela × piezas.
+const markerMeters = (m, cFabrics) =>
+  cFabrics.reduce((s, f) => s + (f.yield != null ? f.yield * num(m.pieces) : 0), 0);
+
+function ConsumptionSection({ cFabrics, planned, cut }) {
+  if (!cFabrics.length) return null;
+  const rows = cFabrics.map((f) => {
+    const y = f.yield;
+    const plan = f.total_length != null ? num(f.total_length) : y != null ? y * planned : null;
+    const used = y != null ? y * cut : null;
+    const left = plan != null && used != null ? plan - used : null;
+    const pct = plan > 0 && used != null ? (used / plan) * 100 : 0;
+    return { ...f, plan, used, left, pct };
+  });
+  const sum = (k) => rows.reduce((s, r) => s + (r[k] ?? 0), 0);
+  const tot = { plan: sum("plan"), used: sum("used") };
+  tot.left = tot.plan - tot.used;
+  tot.pct = tot.plan > 0 ? (tot.used / tot.plan) * 100 : 0;
+
+  const leftCell = (v) => v == null ? <span className="text-gray-300">—</span>
+    : v < 0 ? <span className="text-amber-600" title="Se consumió más de lo planeado">+{fmtM(-v)} m</span>
+    : <span className={v > 0 ? "text-rose-600" : "text-gray-400"}>{fmtM(v)} m</span>;
+
+  return (
+    <>
+      <div className="px-4 pt-3 pb-1 flex items-baseline justify-between">
+        <h3 className="text-xs font-bold text-gray-800">Consumo de tela</h3>
+        <span className="text-[10px] text-gray-400">estimado: rendimiento × piezas cortadas</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="text-left text-gray-500 uppercase tracking-wide">
+            <tr className="border-b">
+              <th className="py-2 px-4 font-medium">Tela</th>
+              <th className="py-2 px-2 font-medium text-right" title="Metros de tela por pieza">Rend.</th>
+              <th className="py-2 px-2 font-medium text-right">Planeado</th>
+              <th className="py-2 px-2 font-medium text-right">Consumido</th>
+              <th className="py-2 px-2 font-medium text-right">Por consumir</th>
+              <th className="py-2 pl-2 pr-4 font-medium">Avance</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td className="py-2 px-4">
+                  <span className="font-semibold text-gray-900">{r.name || "—"}</span>
+                  {r.code && <span className="block text-[10px] text-gray-400 font-mono">{r.code}</span>}
+                </td>
+                <td className="py-2 px-2 text-right tabular-nums text-gray-600 whitespace-nowrap">
+                  {r.yield != null ? <>{fmtYield(r.yield)} <span className="text-gray-400">m/pza</span></> : "—"}
+                </td>
+                <td className="py-2 px-2 text-right tabular-nums text-gray-700 whitespace-nowrap">{r.plan != null ? `${fmtM(r.plan)} m` : "—"}</td>
+                <td className="py-2 px-2 text-right tabular-nums font-semibold text-teal-700 whitespace-nowrap">{r.used != null ? `${fmtM(r.used)} m` : "—"}</td>
+                <td className="py-2 px-2 text-right tabular-nums font-semibold whitespace-nowrap">{leftCell(r.left)}</td>
+                <td className="py-2 pl-2 pr-4"><div className="w-[92px]"><DrawerProgress value={Math.min(Math.round(r.pct), 100)} /></div></td>
+              </tr>
+            ))}
+          </tbody>
+          {rows.length > 1 && (
+            <tfoot>
+              <tr className="border-t bg-gray-50/60 font-semibold">
+                <td className="py-2 px-4 text-gray-900">Total</td>
+                <td className="py-2 px-2" />
+                <td className="py-2 px-2 text-right tabular-nums text-gray-900 whitespace-nowrap">{fmtM(tot.plan)} m</td>
+                <td className="py-2 px-2 text-right tabular-nums text-teal-700 whitespace-nowrap">{fmtM(tot.used)} m</td>
+                <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap">{leftCell(tot.left)}</td>
+                <td className="py-2 pl-2 pr-4"><div className="w-[92px]"><DrawerProgress value={Math.min(Math.round(tot.pct), 100)} /></div></td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </>
+  );
+}
+
 function DrawerProgress({ value }) {
   const v = Math.min(Math.max(num(value), 0), 100);
   return (
@@ -1197,6 +1363,10 @@ function CutBreakdownDrawer({ co, cutNo, onClose }) {
 
   const subtitle = [co.customer_name, o.style || co.style_no, o.color || co.color].filter(Boolean).join(" · ");
 
+  const plannedPcs = num(t.planned ?? fallbackQty);
+  const cutPcs = num(t.cut ?? fallbackCut);
+  const cFabrics = consumptionFabrics(fabrics, o, co, plannedPcs);
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label={`Desglose de ${cutNo}`}>
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
@@ -1243,20 +1413,6 @@ function CutBreakdownDrawer({ co, cutNo, onClose }) {
           <DrawerProgress value={t.progress ?? (fallbackQty > 0 ? (fallbackCut / fallbackQty) * 100 : 0)} />
         </div>
 
-        {/* Telas */}
-        {fabrics.length > 0 && (
-          <div className="px-4 py-2 border-b flex items-center gap-1.5 flex-wrap flex-shrink-0">
-            <span className="text-[11px] text-gray-400 mr-1">Telas</span>
-            {fabrics.map((f, i) => (
-              <span key={i} className="inline-flex items-center gap-1 text-[11px] rounded-lg border border-gray-100 bg-gray-50 px-2 py-1">
-                <span className="font-medium text-gray-700">{f.name || "—"}</span>
-                {f.code && <span className="text-gray-400 font-mono">{f.code}</span>}
-                {f.total_length != null && <span className="text-gray-900">{fmtN(f.total_length)} m</span>}
-              </span>
-            ))}
-          </div>
-        )}
-
         <div className="flex-1 min-h-0 overflow-y-auto">
           {loading ? (
             <div className="text-center text-gray-400 py-12 text-sm flex items-center justify-center gap-2">
@@ -1268,8 +1424,11 @@ function CutBreakdownDrawer({ co, cutNo, onClose }) {
             </div>
           ) : (
             <>
+              {/* Consumo de tela */}
+              <ConsumptionSection cFabrics={cFabrics} planned={plannedPcs} cut={cutPcs} />
+
               {/* Por talla */}
-              <div className="px-4 pt-3 pb-1 flex items-baseline justify-between">
+              <div className="px-4 pt-4 pb-1 flex items-baseline justify-between">
                 <h3 className="text-xs font-bold text-gray-800">Por talla</h3>
                 {t.cut_source === "markers" && <span className="text-[10px] text-gray-400">cortado = piezas de marcadas cerradas</span>}
               </div>
@@ -1291,7 +1450,10 @@ function CutBreakdownDrawer({ co, cutNo, onClose }) {
                     {sizes.map((s) => (
                       <tr key={s.talla} className="align-top">
                         <td className="py-2 px-4">
-                          <span className="font-semibold text-gray-900">{s.talla}</span>
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="font-semibold text-gray-900">{s.talla}</span>
+                            <SizeBadge talla={s.talla} />
+                          </span>
                           {s.markers > 0 && <span className="block text-[10px] text-gray-400">{s.markers} marcada{s.markers > 1 ? "s" : ""}</span>}
                         </td>
                         <td className="py-2 px-2 text-right text-gray-600 tabular-nums">
@@ -1365,6 +1527,12 @@ function CutBreakdownDrawer({ co, cutNo, onClose }) {
                             <span className="text-gray-400"> paneles × {fmtN(m.pieces_per_panel)}</span>
                           </p>
                           <p className="text-[11px] font-semibold text-teal-700 tabular-nums">{fmtN(m.pieces)} pzs</p>
+                          {markerMeters(m, cFabrics) > 0 && (
+                            <p className="text-[10px] text-gray-500 tabular-nums"
+                              title={cFabrics.filter((f) => f.yield != null).map((f) => `${f.name || "Tela"}: ${fmtM(f.yield * num(m.pieces))} m`).join("\n")}>
+                              {fmtM(markerMeters(m, cFabrics))} m de tela
+                            </p>
+                          )}
                         </div>
                       </div>
                       {m.lines.length > 0 && (
@@ -1373,6 +1541,7 @@ function CutBreakdownDrawer({ co, cutNo, onClose }) {
                             <span key={`${l.talla}-${i}`} title={`${l.perPanel} por panel × ${m.panels} paneles`}
                               className="inline-flex items-center gap-1 text-[10px] rounded-md border border-gray-100 bg-white px-1.5 py-0.5">
                               <span className="font-medium text-gray-700">{l.talla}</span>
+                              {otherSizeOf(l.talla) && <span className="text-indigo-600 font-medium">{otherSizeOf(l.talla)}</span>}
                               <span className="text-gray-400">×{fmtN(l.perPanel)}</span>
                               <span className="text-gray-900">{fmtN(l.pieces)}</span>
                             </span>
