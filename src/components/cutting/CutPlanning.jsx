@@ -25,7 +25,7 @@
 //
 import { useState, useEffect, useMemo, useRef } from "react";
 import {
-  Search, RefreshCw, Camera, Calendar, CheckCircle,
+  Search, RefreshCw, Camera, Calendar, CheckCircle, ChevronRight,
   Plus, Minus, Copy, Trash2, Layers, AlertTriangle, Lock,
   Link2, Unlink, X, Check, ChevronLeft,
 } from "lucide-react";
@@ -118,6 +118,36 @@ const orderFabrics = (co) => {
 };
 const fkey = (f) => `${(f?.name ?? "").toString()}|${(f?.code ?? "").toString()}`;
 const findFabric = (opts, code) => opts.find((o) => o.code === code) || null;
+
+// ---- Planeación POR TELA ---------------------------------------------------
+// Una CORTE con varias telas (cuerpo, forro, rib…) se planea completa EN CADA
+// tela: si la orden es de 500 pzas, la tela 1 lleva marcadas por 500 y la tela
+// 2 otras marcadas por 500. Cada marcada pertenece a una tela (fabricCode /
+// fabricName) y el avance se mide por tela.
+const fup = (v) => (v ?? "").toString().trim().toUpperCase();
+// Tela de la orden a la que pertenece una marcada: por código; si la marcada
+// no trae código, por nombre. Si no coincide con ninguna, es una tela "suelta"
+// (dato viejo o tela que ya no está en la orden) y se muestra aparte.
+const markerFabricKey = (m, options) => {
+  const code = fup(m?.fabricCode);
+  const name = fup(m?.fabricName);
+  const hit = (code && options.find((o) => fup(o.code) === code))
+    || (!code && name && options.find((o) => fup(o.name) === name))
+    || (!code && !name && options.length === 1 ? options[0] : null);
+  return hit ? fkey(hit) : `X|${name}|${code}`;
+};
+// Pestañas de tela: las de la orden + las sueltas que traigan las marcadas.
+const fabricTabsOf = (options, markers) => {
+  const tabs = options.map((o) => ({ key: fkey(o), code: o.code, name: o.name, extra: false }));
+  const seen = new Set(tabs.map((t) => t.key));
+  markers.forEach((m) => {
+    const k = markerFabricKey(m, options);
+    if (seen.has(k)) return;
+    seen.add(k);
+    tabs.push({ key: k, code: m.fabricCode || "", name: m.fabricName || "", extra: true });
+  });
+  return tabs;
+};
 
 const orderSizes = (co) =>
   Array.isArray(co?.sizes) && co.sizes.length
@@ -324,29 +354,42 @@ const buildGroupView = (group, members) => {
 // prioridad (luego fecha) hasta cubrir lo que pide cada una; lo que sobra va a
 // la última orden que lleva esa talla. Las marcadas verificadas no se tocan:
 // cuentan con lo que cada orden ya tiene.
-// → Map(cutOrderId → { markers: [...serializadas], byTalla: Map(talla → pzas) })
-const allocateGroup = (markers, members) => {
+// → Map(cutOrderId → { markers: [...serializadas], byFabric: Map(tela → Map(talla → pzas)) })
+// Con varias telas, cada tela cubre el pedido completo de cada orden: lo que
+// "falta" se lleva por separado para cada tela. byTalla reporta lo planeado de
+// la tela que se pida (byFabric → Map(fabricKey → Map(talla → pzas))).
+const allocateGroup = (markers, members, fabricOptions = []) => {
   const ms = [...members].sort(memberSort);
-  const need = new Map(ms.map((co) => [co.id, new Map(orderSizes(co).map((s) => [s.talla, s.quantity]))]));
-  const out = new Map(ms.map((co) => [co.id, { markers: [], byTalla: new Map() }]));
-  const addPieces = (id, talla, pcs) => {
-    const bt = out.get(id).byTalla;
+  const fkOf = (m) => markerFabricKey(m, fabricOptions);
+  const needs = new Map(); // fabricKey → Map(coId → Map(talla → falta))
+  const needFor = (fk) => {
+    if (!needs.has(fk)) needs.set(fk, new Map(ms.map((co) => [co.id, new Map(orderSizes(co).map((s) => [s.talla, s.quantity]))])));
+    return needs.get(fk);
+  };
+  const out = new Map(ms.map((co) => [co.id, { markers: [], byFabric: new Map() }]));
+  const addPieces = (fk, id, talla, pcs) => {
+    const bf = out.get(id).byFabric;
+    if (!bf.has(fk)) bf.set(fk, new Map());
+    const bt = bf.get(fk);
     bt.set(talla, (bt.get(talla) || 0) + pcs);
-    const nd = need.get(id);
+    const nd = needFor(fk).get(id);
     if (nd.has(talla)) nd.set(talla, nd.get(talla) - pcs);
   };
 
   // 1) Lo ya verificado (bloqueado) cuenta primero.
   markers.filter((m) => m.done).forEach((m) => {
+    const fk = fkOf(m);
     ms.forEach((co) => {
       const copy = (Array.isArray(co.markers) ? co.markers : []).find((x) => x?.id === m.id);
-      (copy?.lines || []).forEach((l) => addPieces(co.id, String(l.talla), num(l.panels) * num(l.perPanel)));
+      (copy?.lines || []).forEach((l) => addPieces(fk, co.id, String(l.talla), num(l.panels) * num(l.perPanel)));
     });
   });
 
   // 2) Marcadas editables, en el orden en que están.
   markers.filter((m) => !m.done).forEach((m) => {
     const [g] = serializeMarkers([m]);
+    const fk = fkOf(m);
+    const need = needFor(fk);
     const perMember = new Map(ms.map((co) => [co.id, []]));
     markerLines(m).forEach((l) => {
       const talla = String(l.talla);
@@ -360,14 +403,14 @@ const allocateGroup = (markers, members) => {
         const n = Math.min(left, Math.ceil(want / per));
         left -= n;
         perMember.get(co.id).push({ talla, panels: n, perPanel: per });
-        addPieces(co.id, talla, n * per);
+        addPieces(fk, co.id, talla, n * per);
       });
       if (left > 0) {
         const co = takers[takers.length - 1] || ms[0];
         const lines = perMember.get(co.id);
         const ex = lines.find((x) => x.talla === talla);
         if (ex) ex.panels += left; else lines.push({ talla, panels: left, perPanel: per });
-        addPieces(co.id, talla, left * per);
+        addPieces(fk, co.id, talla, left * per);
       }
     });
     ms.forEach((co) => {
@@ -407,7 +450,9 @@ export default function CutPlanning() {
   const [markers, setMarkers] = useState([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [activeFabric, setActiveFabric] = useState(null);
+  // Pestaña de tela activa (clave fkey). Con varias telas, cada una se planea
+  // por el pedido completo; ver markerFabricKey.
+  const [fabricTab, setFabricTab] = useState(null);
 
   // Agrupación
   const [groups, setGroups] = useState([]);
@@ -521,7 +566,7 @@ export default function CutPlanning() {
     const def = findFabric(opts, view.fabric_code) || opts[0] || null;
     const mk = buildMarkers(view);
     setSelected(view);
-    setActiveFabric(def);
+    setFabricTab(def ? fkey(def) : null);
     loadMarkers(mk.length ? mk : [emptyMarker(view, 0, def)]);
   };
 
@@ -585,7 +630,7 @@ export default function CutPlanning() {
     const def = findFabric(opts, co.fabric_code) || opts[0] || null;
     const mk = buildMarkers(co);
     setSelected(co);
-    setActiveFabric(def);
+    setFabricTab(def ? fkey(def) : null);
     loadMarkers(mk.length ? mk : [emptyMarker(co, 0, def)]);
     setMessage("");
     setError("");
@@ -624,8 +669,49 @@ export default function CutPlanning() {
   const pedido = useMemo(() => (selected ? orderSizes(selected) : []), [selected]);
   const fabricOptions = useMemo(() => (selected ? orderFabrics(selected) : []), [selected]);
 
+  // ---- Telas --------------------------------------------------------------
+  const fabricTabs = useMemo(() => fabricTabsOf(fabricOptions, markers), [fabricOptions, markers]);
+  const activeTab = fabricTabs.find((t) => t.key === fabricTab) || fabricTabs[0] || null;
+  const activeFabric = activeTab ? { code: activeTab.code, name: activeTab.name } : null;
+  const multiFabric = fabricTabs.length > 1;
+  const inTab = (m) => !multiFabric || !activeTab || markerFabricKey(m, fabricOptions) === activeTab.key;
+  // Marcadas de la tela activa: son las que se editan y las que suman al avance.
+  const visibleMarkers = useMemo(
+    () => markers.filter(inTab),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [markers, activeTab?.key, multiFabric, fabricOptions]
+  );
+
+  // Avance por tela: cada tela debe cubrir el pedido completo.
+  const fabricProgress = useMemo(() => {
+    const qtyByTalla = new Map(pedido.map((p) => [String(p.talla), p.quantity]));
+    const total = pedido.reduce((a, p) => a + p.quantity, 0);
+    return new Map(fabricTabs.map((t) => {
+      const list = markers.filter((m) => markerFabricKey(m, fabricOptions) === t.key);
+      const byTalla = new Map();
+      list.forEach((m) => markerLines(m).forEach((l) => {
+        const k = String(l.talla);
+        byTalla.set(k, (byTalla.get(k) || 0) + linePieces(l));
+      }));
+      let covered = 0;
+      let planned = 0;
+      byTalla.forEach((pcs, k) => { planned += pcs; covered += Math.min(pcs, qtyByTalla.get(k) || 0); });
+      return [t.key, {
+        markers: list.length,
+        planned,
+        covered,
+        total,
+        complete: total > 0 && covered >= total,
+        verified: list.length > 0 && list.every((m) => m.done),
+      }];
+    }));
+  }, [fabricTabs, markers, pedido, fabricOptions]);
+  const pendingFabrics = fabricTabs.filter((t) => !fabricProgress.get(t.key)?.complete);
+
   // ---- Marcadas -----------------------------------------------------------
-  const addMarker = () => setMarkers((ms) => [...ms, emptyMarker(selected, ms.length, activeFabric)]);
+  // Nueva marcada: hereda la tela activa y se numera dentro de esa tela.
+  const addMarker = () =>
+    setMarkers((ms) => [...ms, emptyMarker(selected, ms.filter(inTab).length, activeFabric)]);
 
   const setMarkerFabric = (id, key) =>
     setMarkers((ms) =>
@@ -698,7 +784,7 @@ export default function CutPlanning() {
 
   const cutByTalla = useMemo(() => {
     const map = new Map();
-    markers.forEach((m) => {
+    visibleMarkers.forEach((m) => {
       m.lines.forEach((l) => {
         const panels = num(l.panels);
         const per = num(l.perPanel);
@@ -711,7 +797,7 @@ export default function CutPlanning() {
       });
     });
     return map;
-  }, [markers]);
+  }, [visibleMarkers]);
 
   const summary = useMemo(() => {
     const base = pedido.map((p) => ({ ...p }));
@@ -742,10 +828,10 @@ export default function CutPlanning() {
       },
       { quantity: 0, cut: 0, remaining: 0, over: 0 }
     );
-    t.panels = markers.reduce((s, m) => s + markerPanels(m), 0);
-    t.consumo = markers.reduce((s, m) => s + markerConsumo(m), 0);
+    t.panels = visibleMarkers.reduce((s, m) => s + markerPanels(m), 0);
+    t.consumo = visibleMarkers.reduce((s, m) => s + markerConsumo(m), 0);
     return t;
-  }, [summary, markers]);
+  }, [summary, visibleMarkers]);
 
   const remainingByTalla = useMemo(
     () => new Map(summary.map((r) => [r.talla, r.remaining])),
@@ -756,12 +842,12 @@ export default function CutPlanning() {
     [summary]
   );
 
-  const verification = useMemo(() => markerVerification(markers), [markers]);
+  const verification = useMemo(() => markerVerification(visibleMarkers), [visibleMarkers]);
 
   // Reparto en vivo de las marcadas del grupo entre sus órdenes.
   const allocation = useMemo(
-    () => (selected?.isGroup ? allocateGroup(markers, selected.members) : null),
-    [selected, markers]
+    () => (selected?.isGroup ? allocateGroup(markers, selected.members, fabricOptions) : null),
+    [selected, markers, fabricOptions]
   );
 
   // ---- Guardar (sólo planeación) -----------------------------------------
@@ -777,7 +863,7 @@ export default function CutPlanning() {
       // en 0 — y el backend la cerraba sola. El avance real de corte lo escribe
       // CutVerification conforme el supervisor va verificando cada marcada.
       if (selected.isGroup) {
-        const alloc = allocateGroup(list, selected.members);
+        const alloc = allocateGroup(list, selected.members, fabricOptions);
         const res = await fetch(`${API_URL}/api/cut-groups/${selected.groupId}/plan`, {
           method: "PATCH",
           headers: authHeaders(),
@@ -826,7 +912,7 @@ export default function CutPlanning() {
   };
 
   const handleSave = () => {
-    if (totals.cut <= 0) {
+    if (!markers.some((m) => markerTotal(m) > 0)) {
       return setError("Ingrese los paneles y las piezas por panel de cada marcada");
     }
     const v = markerVerification(markers);
@@ -836,10 +922,19 @@ export default function CutPlanning() {
         : v.pending > 0
         ? `Planeación guardada · faltan ${v.pending} marcada${v.pending > 1 ? "s" : ""} por verificar (supervisor de corte)`
         : "Planeación guardada · todas las marcadas ya están verificadas";
-    persist(markers, msg);
+    // Con varias telas se puede guardar por partes; se avisa qué tela falta.
+    const missing = multiFabric && pendingFabrics.length
+      ? ` · falta planear ${pendingFabrics.map((t) => t.code || t.name || "tela").join(", ")} por el pedido completo`
+      : "";
+    persist(markers, msg + missing);
   };
 
-  const lockedCount = markers.filter((m) => m.done).length;
+  // Al terminar una tela, pasar a la siguiente que falte.
+  const nextPendingTab = multiFabric
+    ? pendingFabrics.find((t) => t.key !== activeTab?.key) || null
+    : null;
+
+  const lockedCount = visibleMarkers.filter((m) => m.done).length;
 
   return (
     <div className="space-y-4">
@@ -1091,41 +1186,67 @@ export default function CutPlanning() {
               <Info label="Estilo N°" value={selected.modelo_code || selected.style_no || selected.style_code || selected.estilo} />
               <Info label="Color" value={selected.color} />
               <Info label="Season" value={selected.season} />
-              <div className="rounded-lg px-3 py-2 border bg-gray-50 border-gray-100 min-w-0">
-                <span className="text-[11px] text-gray-500">Código de tela</span>
-                {fabricOptions.length > 1 ? (
-                  <>
-                    <select
-                      value={fkey(activeFabric)}
-                      onChange={(e) =>
-                        setActiveFabric(fabricOptions.find((o) => fkey(o) === e.target.value) || null)
-                      }
-                      title="Código que hereda cada marcada nueva"
-                      className="mt-0.5 w-full rounded-md border border-gray-200 bg-white px-1.5 py-1 text-sm font-semibold text-gray-900 outline-none focus:ring-2 focus:ring-gray-900/10"
-                    >
-                      {fabricOptions.map((f) => (
-                        <option key={fkey(f)} value={fkey(f)}>{f.code || "(sin código)"}</option>
-                      ))}
-                    </select>
-                    <span className="block text-[10px] text-gray-400 mt-0.5">{fabricOptions.length} telas</span>
-                  </>
-                ) : (
-                  <div className="mt-0.5 text-sm font-semibold text-gray-900 truncate">
-                    {activeFabric?.code || selected.fabric_code || "—"}
-                  </div>
-                )}
-              </div>
-              <Info label="Tela" value={activeFabric?.name || selected.fabric} />
+              <Info
+                label={multiFabric ? "Telas" : "Código de tela"}
+                value={multiFabric ? `${fabricTabs.length} telas · ${fabricTabs.length - pendingFabrics.length} completas` : (activeFabric?.code || selected.fabric_code)}
+              />
+              <Info label={multiFabric ? "Tela en planeación" : "Tela"} value={multiFabric ? [activeFabric?.code, activeFabric?.name].filter(Boolean).join(" ") : (activeFabric?.name || selected.fabric)} />
               <Info label="A cortar" value={`${rnd(selected.quantity)} pzas`} />
               <Info label="Fecha" value={fmtDate(selected.cut_date)} icon={Calendar} />
             </div>
 
             <div className="p-5 space-y-5">
+              {/* Telas: cada una se planea por el pedido completo */}
+              {multiFabric && (
+                <div>
+                  <div className="flex items-baseline justify-between gap-2 mb-2">
+                    <h3 className="font-semibold text-gray-900">Telas de la orden</h3>
+                    <span className="text-xs text-gray-500">Cada tela se planea por las {rnd(totals.quantity)} pzas del pedido</span>
+                  </div>
+                  <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3" role="tablist">
+                    {fabricTabs.map((t, ti) => {
+                      const pr = fabricProgress.get(t.key) || { covered: 0, total: 0, markers: 0 };
+                      const on = activeTab?.key === t.key;
+                      const pct = pr.total > 0 ? Math.min(Math.round((pr.covered / pr.total) * 100), 100) : 0;
+                      return (
+                        <button
+                          key={t.key}
+                          role="tab"
+                          aria-selected={on}
+                          onClick={() => setFabricTab(t.key)}
+                          className={`text-left rounded-xl border px-3 py-2.5 transition ${on ? "border-gray-900 bg-white ring-1 ring-gray-900" : "border-gray-200 bg-gray-50 hover:bg-white"}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className={`w-5 h-5 shrink-0 rounded-full text-[10px] font-bold flex items-center justify-center ${pr.complete ? "bg-green-600 text-white" : on ? "bg-gray-900 text-white" : "bg-gray-200 text-gray-600"}`}>
+                              {pr.complete ? <Check className="w-3 h-3" /> : ti + 1}
+                            </span>
+                            <span className="font-mono text-sm font-semibold text-gray-900 truncate">{t.code || "(sin código)"}</span>
+                            {t.extra && <span className="text-[10px] rounded-full px-1.5 py-0.5 bg-amber-100 text-amber-700" title="Esta tela no está en la orden">fuera de la orden</span>}
+                          </div>
+                          {t.name && <div className="mt-0.5 text-xs text-gray-500 truncate">{t.name}</div>}
+                          <div className="mt-2 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                            <div className={`h-full ${pr.complete ? "bg-green-500" : "bg-blue-500"}`} style={{ width: `${pct}%` }} />
+                          </div>
+                          <div className="mt-1 flex items-center justify-between text-[11px]">
+                            <span className={pr.complete ? "text-green-700 font-medium" : pr.markers ? "text-gray-600" : "text-gray-400"}>
+                              {pr.complete ? "Completa" : pr.markers ? `${rnd(pr.covered)} / ${rnd(pr.total)} pzas` : "Sin planear"}
+                            </span>
+                            <span className="text-gray-400">{pr.markers} marcada{pr.markers === 1 ? "" : "s"}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Avance global (planeado) */}
               <div className="rounded-2xl border border-gray-200 bg-gray-50/60 p-4">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
-                    <div className="text-[11px] uppercase tracking-wide text-gray-500">Planeado</div>
+                    <div className="text-[11px] uppercase tracking-wide text-gray-500">
+                      Planeado{multiFabric && activeTab ? <span className="normal-case tracking-normal"> · {activeTab.code || activeTab.name}</span> : null}
+                    </div>
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-2xl font-bold text-blue-700">{rnd(totals.cut)}</span>
                       <span className="text-sm text-gray-500">/ {rnd(totals.quantity)} pzas</span>
@@ -1162,21 +1283,28 @@ export default function CutPlanning() {
                 <div>
                   <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                     <Layers className="w-4 h-4 text-gray-400" /> Marcadas
+                    {multiFabric && activeTab && (
+                      <span className="text-xs font-mono font-medium rounded-full px-2 py-0.5 bg-slate-100 text-slate-700">{activeTab.code || activeTab.name}</span>
+                    )}
                   </h3>
-                  <p className="text-xs text-gray-500">Paneles × pzs/panel de cada talla del trazo.</p>
+                  <p className="text-xs text-gray-500">
+                    {multiFabric ? "Marcadas de esta tela · paneles × pzs/panel de cada talla." : "Paneles × pzs/panel de cada talla del trazo."}
+                  </p>
                 </div>
                 <button onClick={addMarker} className="inline-flex items-center gap-1.5 text-sm rounded-lg bg-gray-900 px-3 py-2 text-white hover:bg-gray-800">
                   <Plus className="w-4 h-4" /> Añadir marcada
                 </button>
               </div>
 
-              {markers.length === 0 ? (
+              {visibleMarkers.length === 0 ? (
                 <button onClick={addMarker} className="w-full rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500 hover:border-gray-400 hover:bg-gray-50">
-                  Añada la primera marcada para empezar a planear.
+                  {multiFabric && activeTab
+                    ? <>Planee <span className="font-mono font-semibold text-gray-700">{activeTab.code || activeTab.name}</span> por las {rnd(totals.quantity)} pzas del pedido: añada su primera marcada.</>
+                    : "Añada la primera marcada para empezar a planear."}
                 </button>
               ) : (
                 <div className="space-y-4">
-                  {markers.map((m, mi) => {
+                  {visibleMarkers.map((m, mi) => {
                     const panels = markerPanels(m);
                     const tot = markerTotal(m);
                     const consumo = markerConsumo(m);
@@ -1201,7 +1329,11 @@ export default function CutPlanning() {
                             className="w-40 sm:w-56 rounded-lg border border-transparent bg-transparent px-2 py-1 text-sm font-semibold text-gray-900 hover:border-gray-200 focus:border-gray-200 focus:bg-white outline-none focus:ring-2 focus:ring-gray-900/10 disabled:hover:border-transparent"
                           />
 
-                          {fabricOptions.length > 1 ? (
+                          {multiFabric ? (
+                            <span className="text-[11px] font-mono rounded-full px-2 py-0.5 bg-slate-100 text-slate-600" title="La tela la define la pestaña de tela">
+                              {m.fabricCode || m.fabricName || "(sin código)"}
+                            </span>
+                          ) : fabricOptions.length > 1 ? (
                             <label className="flex items-center gap-1.5">
                               <span className="text-[10px] uppercase tracking-wide text-gray-400">Tela</span>
                               <select
@@ -1419,8 +1551,23 @@ export default function CutPlanning() {
 
               {/* Consolidado por talla */}
               <div>
+                {multiFabric && fabricProgress.get(activeTab?.key)?.complete && nextPendingTab && (
+                  <button
+                    onClick={() => setFabricTab(nextPendingTab.key)}
+                    className="mb-4 w-full flex items-center justify-between gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-left hover:bg-green-100"
+                  >
+                    <span className="text-sm text-green-800">
+                      <CheckCircle className="inline w-4 h-4 mr-1 -mt-0.5" />
+                      {activeTab.code || activeTab.name} completa. Ahora planee{" "}
+                      <span className="font-mono font-semibold">{nextPendingTab.code || nextPendingTab.name}</span> por las {rnd(totals.quantity)} pzas.
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-green-700 shrink-0" />
+                  </button>
+                )}
                 <h3 className="font-semibold text-gray-900 mb-2">
-                  Total por talla{selected.isGroup && <span className="ml-2 text-xs font-normal text-gray-500">suma de las {selected.members.length} órdenes del grupo</span>}
+                  Total por talla
+                  {multiFabric && activeTab && <span className="ml-2 text-xs font-mono font-medium text-slate-600">{activeTab.code || activeTab.name}</span>}
+                  {selected.isGroup && <span className="ml-2 text-xs font-normal text-gray-500">suma de las {selected.members.length} órdenes del grupo</span>}
                 </h3>
                 <div className="overflow-x-auto rounded-xl border border-gray-200">
                   <table className="w-full text-sm">
@@ -1469,7 +1616,13 @@ export default function CutPlanning() {
               </div>
 
               {selected.isGroup && allocation && (
-                <GroupAllocation members={selected.members} allocation={allocation} tallas={summary.map((r) => r.talla)} />
+                <GroupAllocation
+                  members={selected.members}
+                  allocation={allocation}
+                  tallas={summary.map((r) => r.talla)}
+                  fabricKey={activeTab?.key}
+                  fabricLabel={multiFabric ? activeTab?.code || activeTab?.name : ""}
+                />
               )}
 
               {error && !groupMode && <div className="bg-red-50 text-red-700 p-3 rounded-xl text-sm">{error}</div>}
@@ -1481,9 +1634,18 @@ export default function CutPlanning() {
                   <div className="hidden sm:block min-w-0 text-xs leading-tight">
                     <div className="font-semibold text-gray-900 tabular-nums">{rnd(totals.cut)} / {rnd(totals.quantity)} pzas</div>
                     <div className={dirty ? "text-amber-600" : "text-gray-400"}>{dirty ? "Cambios sin guardar" : "Todo guardado"}</div>
+                    {multiFabric && (
+                      <div className={pendingFabrics.length ? "text-amber-600" : "text-green-600"}>
+                        {pendingFabrics.length ? `Faltan ${pendingFabrics.length} de ${fabricTabs.length} telas` : "Todas las telas completas"}
+                      </div>
+                    )}
                   </div>
                   <button onClick={handleSave} disabled={saving} className="flex-1 rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50">
-                    {saving ? "Guardando…" : `Guardar corte · ${rnd(totals.cut)} pzas planeadas`}
+                    {saving
+                      ? "Guardando…"
+                      : multiFabric
+                      ? `Guardar corte · ${fabricTabs.length - pendingFabrics.length} de ${fabricTabs.length} telas completas`
+                      : `Guardar corte · ${rnd(totals.cut)} pzas planeadas`}
                   </button>
                 </div>
                 <p className="mt-2 text-center text-[11px] text-gray-400">
@@ -1574,11 +1736,13 @@ function GroupRow({ view, selected, dimmed, onClick }) {
 }
 
 // Cuánto se lleva cada orden del grupo, por talla (planeado / pedido).
-function GroupAllocation({ members, allocation, tallas }) {
+function GroupAllocation({ members, allocation, tallas, fabricKey, fabricLabel }) {
   const ms = [...members].sort(memberSort);
   return (
     <div>
-      <h3 className="font-semibold text-gray-900">Reparto por orden</h3>
+      <h3 className="font-semibold text-gray-900">
+        Reparto por orden{fabricLabel && <span className="ml-2 text-xs font-mono font-medium text-slate-600">{fabricLabel}</span>}
+      </h3>
       <p className="text-xs text-gray-500 mb-2">
         Los paneles se asignan por prioridad y fecha; lo que sobra de una talla va a la última orden que la lleva.
       </p>
@@ -1598,7 +1762,7 @@ function GroupAllocation({ members, allocation, tallas }) {
           <tbody className="divide-y">
             {ms.map((co) => {
               const ped = new Map(orderSizes(co).map((s) => [s.talla, s.quantity]));
-              const got = allocation.get(co.id)?.byTalla || new Map();
+              const got = allocation.get(co.id)?.byFabric.get(fabricKey) || new Map();
               const pedTot = [...ped.values()].reduce((a, b) => a + b, 0);
               const gotTot = [...got.values()].reduce((a, b) => a + b, 0);
               return (

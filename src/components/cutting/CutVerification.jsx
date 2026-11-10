@@ -137,6 +137,51 @@ const orderFabrics = (co) => {
   return out;
 };
 
+// ---- Avance POR TELA ------------------------------------------------------
+// Una CORTE con varias telas se planea completa en cada tela (CutPlanning).
+// Una pieza de la orden está cortada cuando TODAS sus telas planeadas están
+// cortadas, así que el cortado de cada talla es el MÍNIMO entre las telas que
+// tienen marcadas (una tela sin marcadas no frena el avance: así las órdenes
+// viejas, planeadas en una sola tela, no retroceden).
+const fup = (v) => (v ?? "").toString().trim().toUpperCase();
+const fabricKeyOf = (f) => `${f?.name ?? ""}|${f?.code ?? ""}`;
+const markerFabricKey = (m, options) => {
+  const code = fup(m?.fabricCode);
+  const name = fup(m?.fabricName);
+  const hit = (code && options.find((o) => fup(o.code) === code))
+    || (!code && name && options.find((o) => fup(o.name) === name))
+    || (!code && !name && options.length === 1 ? options[0] : null);
+  return hit ? fabricKeyOf(hit) : `X|${name}|${code}`;
+};
+// talla → { pieces, panels } de las marcadas VERIFICADAS, combinando telas.
+const cutByTallaAcrossFabrics = (list, options) => {
+  const byFabric = new Map(); // fabricKey → Map(talla → pzas)
+  const panels = new Map();   // talla → paneles (todas las telas)
+  list.forEach((m) => {
+    const fk = markerFabricKey(m, options);
+    if (!byFabric.has(fk)) byFabric.set(fk, new Map());
+    if (!m.done) return;
+    const bt = byFabric.get(fk);
+    m.lines.forEach((l) => {
+      const p = num(l.panels);
+      const per = num(l.perPanel);
+      if (p <= 0 || per <= 0) return;
+      const key = String(l.talla);
+      bt.set(key, (bt.get(key) || 0) + p * per);
+      panels.set(key, (panels.get(key) || 0) + p);
+    });
+  });
+  const out = new Map();
+  const fabrics = [...byFabric.values()];
+  const tallas = new Set();
+  fabrics.forEach((bt) => bt.forEach((_, t) => tallas.add(t)));
+  tallas.forEach((t) => {
+    const pieces = fabrics.length ? Math.min(...fabrics.map((bt) => bt.get(t) || 0)) : 0;
+    out.set(t, { pieces, panels: panels.get(t) || 0 });
+  });
+  return out;
+};
+
 const orderSizes = (co) =>
   Array.isArray(co?.sizes) && co.sizes.length
     ? co.sizes.map((s) => ({ talla: String(s.talla), quantity: num(s.quantity) }))
@@ -331,22 +376,37 @@ export default function CutVerification() {
   // verificadas (m.done). Una marcada planeada pero no verificada aún NO cuenta
   // como cortada: no suma al avance ni descuenta del restante hasta que el
   // supervisor pulse "Completar marcada".
-  const cutByTalla = useMemo(() => {
-    const map = new Map();
-    markers.filter((m) => m.done).forEach((m) => {
-      m.lines.forEach((l) => {
-        const panels = num(l.panels);
-        const per = num(l.perPanel);
-        if (panels <= 0 || per <= 0) return;
-        const key = String(l.talla);
-        const cur = map.get(key) || { pieces: 0, panels: 0 };
-        cur.pieces += panels * per;
-        cur.panels += panels;
-        map.set(key, cur);
-      });
+  // Con varias telas: cortado por talla = mínimo entre las telas planeadas.
+  const cutByTalla = useMemo(
+    () => cutByTallaAcrossFabrics(markers, fabricOptions),
+    [markers, fabricOptions]
+  );
+
+  // Avance de cada tela (verificado vs pedido completo).
+  const fabricStatus = useMemo(() => {
+    const qty = new Map(pedido.map((p) => [String(p.talla), num(p.quantity)]));
+    const total = pedido.reduce((a, p) => a + num(p.quantity), 0);
+    const rows = fabricOptions.map((f) => ({ key: fabricKeyOf(f), code: f.code, name: f.name }));
+    const seen = new Set(rows.map((r) => r.key));
+    markers.forEach((m) => {
+      const k = markerFabricKey(m, fabricOptions);
+      if (!seen.has(k)) { seen.add(k); rows.push({ key: k, code: m.fabricCode || "", name: m.fabricName || "" }); }
     });
-    return map;
-  }, [markers]);
+    return rows.map((r) => {
+      const list = markers.filter((m) => markerFabricKey(m, fabricOptions) === r.key);
+      const sum = (arr) => {
+        const bt = new Map();
+        arr.forEach((m) => markerLines(m).forEach((l) => {
+          const k = String(l.talla);
+          bt.set(k, (bt.get(k) || 0) + num(l.panels) * num(l.perPanel));
+        }));
+        let c = 0;
+        bt.forEach((v, k) => { c += Math.min(v, qty.get(k) || 0); });
+        return c;
+      };
+      return { ...r, markers: list.length, verified: list.filter((m) => m.done).length, planned: sum(list), cut: sum(list.filter((m) => m.done)), total };
+    });
+  }, [markers, fabricOptions, pedido]);
 
   const summary = useMemo(() => {
     const base = pedido.map((p) => ({ ...p }));
@@ -391,16 +451,8 @@ export default function CutVerification() {
   // marcadas verificadas: así `amount_cut`/`remaining_to_cut` que se guardan en
   // el backend coinciden con el "Cortado" que se ve en pantalla.
   const sizeProgressFrom = (list) => {
-    const cut = new Map(); // talla → { pieces, panels }
-    list.filter((m) => m.done).forEach((m) => {
-      markerLines(m).forEach((l) => {
-        const key = String(l.talla);
-        const cur = cut.get(key) || { pieces: 0, panels: 0 };
-        cur.pieces += num(l.panels) * num(l.perPanel);
-        cur.panels += num(l.panels);
-        cut.set(key, cur);
-      });
-    });
+    // talla → { pieces, panels }; con varias telas, el mínimo entre telas.
+    const cut = cutByTallaAcrossFabrics(list, fabricOptions);
     const rows = [];
     const seen = new Set();
     pedido.forEach((p) => {
@@ -972,6 +1024,44 @@ export default function CutVerification() {
             </div>
 
             <div className="p-5 space-y-5">
+              {/* Avance por tela (sólo si la orden tiene varias) */}
+              {fabricStatus.length > 1 && (
+                <div>
+                  <div className="flex items-baseline justify-between gap-2 mb-2">
+                    <h3 className="font-semibold text-gray-900">Telas</h3>
+                    <span className="text-xs text-gray-500">Una pieza cuenta como cortada cuando todas sus telas están cortadas</span>
+                  </div>
+                  <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+                    {fabricStatus.map((f) => {
+                      const pct = f.total > 0 ? Math.min(Math.round((f.cut / f.total) * 100), 100) : 0;
+                      const done = f.total > 0 && f.cut >= f.total;
+                      return (
+                        <div key={f.key} className={`rounded-xl border px-3 py-2.5 ${done ? "border-green-200 bg-green-50/60" : "border-gray-200 bg-gray-50"}`}>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm font-semibold text-gray-900 truncate">{f.code || "(sin código)"}</span>
+                            <span className="ml-auto text-[11px] text-gray-500 whitespace-nowrap">{f.verified}/{f.markers} marcadas</span>
+                          </div>
+                          {f.name && <div className="text-xs text-gray-500 truncate">{f.name}</div>}
+                          <div className="mt-2 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                            <div className={`h-full ${done ? "bg-green-500" : "bg-blue-500"}`} style={{ width: `${pct}%` }} />
+                          </div>
+                          <div className="mt-1 text-[11px]">
+                            {f.markers === 0 ? (
+                              <span className="text-amber-600 font-medium">Sin planear</span>
+                            ) : (
+                              <>
+                                <span className={done ? "text-green-700 font-medium" : "text-gray-700"}>{rnd(f.cut)} / {rnd(f.total)} cortadas</span>
+                                {f.planned < f.total && <span className="text-amber-600"> · planeado {rnd(f.planned)}</span>}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Avance global */}
               <div className="rounded-2xl border border-gray-200 bg-gray-50/60 p-4">
                 <div className="flex flex-wrap items-end justify-between gap-3">

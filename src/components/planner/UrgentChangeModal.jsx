@@ -292,243 +292,286 @@ export default function UrgentChangeModal({
   const srcLabel = `${srcWo?.work_order_no || `#${a.work_order_id}`}${a.color ? ` · ${a.color}` : ""}`;
   const tgtLabel = targetWo ? `${targetWo.work_order_no}${newColor ? ` · ${newColor}` : ""}` : "—";
 
+  const maxQty = available == null ? movable : Math.min(movable, available);
+  const tabCls = (m) => `py-2 rounded-lg text-[12px] font-semibold transition-colors ${mode === m ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-800"}`;
+  const H = ({ children, hint }) => (
+    <div className="mb-1.5">
+      <div className="text-[12px] font-semibold text-gray-800">{children}{hint && <span className="font-normal text-gray-400"> · {hint}</span>}</div>
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-3" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-[420px] text-[12px] max-h-[92vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="px-4 py-3 border-b flex items-start gap-2">
-          <Zap className="w-4 h-4 text-orange-600 mt-0.5 shrink-0" />
+      <div
+        role="dialog"
+        aria-label="Cambio urgente"
+        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[860px] max-h-[92vh] flex flex-col overflow-hidden text-[12px]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* ── Encabezado ── */}
+        <div className="relative pl-5 pr-3 py-3 border-b flex items-start gap-3">
+          <span className="absolute left-0 top-0 bottom-0 w-1.5 bg-orange-600" aria-hidden />
           <div className="min-w-0 flex-1">
-            <h3 className="font-semibold text-gray-900 text-[14px]">Cambio urgente</h3>
-            <p className="text-gray-500 mt-0.5 flex items-center gap-1">
-              <Lock className="w-3 h-3" />
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-orange-600" />
+              <h3 className="font-bold text-gray-900 text-[15px] tracking-tight">Cambio urgente</h3>
+            </div>
+            <p className="text-gray-500 mt-0.5 flex items-center gap-1 truncate">
+              <Lock className="w-3 h-3 shrink-0" />
               {weekLabel}{weekLock?.locked_by_name ? ` · bloqueada por ${weekLock.locked_by_name}` : ""}
             </p>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-500" aria-label="Cerrar"><X className="w-4 h-4" /></button>
+          <span className="shrink-0 text-[12px] font-semibold rounded-lg bg-gray-900 text-white px-2.5 py-1">Línea {a.line_no}</span>
+          <span className="shrink-0 text-[12px] rounded-lg border border-gray-200 text-gray-700 px-2.5 py-1">{day.slice(8)}/{day.slice(5, 7)}/{day.slice(0, 4)}</span>
+          <button onClick={onClose} className="shrink-0 p-1 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100" aria-label="Cerrar"><X className="w-4 h-4" /></button>
         </div>
 
-        <div className="p-4 space-y-3 overflow-y-auto">
-          <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
-            <div className="text-gray-500">Casilla</div>
-            <div className="font-semibold text-gray-900">Línea {a.line_no} · {day}</div>
-            <div className="text-gray-700">{srcLabel} · {fmt(srcQty)} pzas{produced > 0 ? ` (${fmt(produced)} ya cosidas)` : ""}</div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-1 p-1 bg-gray-100 rounded-lg" role="tablist">
-            {[["color", "Cambiar color"], ["style", "Cambiar estilo"]].map(([m, label]) => (
-              <button key={m} role="tab" aria-selected={mode === m} onClick={() => switchMode(m)}
-                className={`py-1.5 rounded-md font-medium ${mode === m ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-800"}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {mode === "style" && (
-            <div>
-              <label className="text-gray-600 font-medium" htmlFor="urgent-search">Orden con el nuevo estilo</label>
-              <div className="relative mt-1">
-                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2 top-1/2 -translate-y-1/2" />
-                <input id="urgent-search" value={query} onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Buscar por orden, estilo, cliente o PO (incluye saldos de días pasados)"
-                  className="w-full pl-7 pr-2 py-1.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500" />
-              </div>
-              <div className="mt-1.5 max-h-40 overflow-y-auto border rounded-lg divide-y">
-                {candidates.length === 0 && <div className="px-3 py-2 text-gray-500">Ninguna orden con piezas libres o saldo de días pasados coincide.</div>}
-                {candidates.map(({ w, free, bal }) => (
-                  <button key={w.id} onClick={() => pickTarget(w.id)}
-                    className={`w-full text-left px-3 py-1.5 hover:bg-orange-50 focus:outline-none focus:bg-orange-50 ${targetId === w.id ? "bg-orange-50 ring-1 ring-inset ring-orange-500" : ""}`}>
-                    <div className="flex justify-between gap-2">
-                      <span className="font-semibold text-gray-900 truncate">{w.work_order_no}</span>
-                      <span className="text-gray-500 shrink-0">
-                        {fmt(free)} libres{bal > 0 && <span className="text-amber-700"> · +{fmt(bal)} saldo</span>}
-                      </span>
-                    </div>
-                    <div className="text-gray-500 truncate">{w.style_code || w.estilo || "—"} · {w.style_description} · {w.customer_name}</div>
-                  </button>
-                ))}
-              </div>
+        {/* ── Cuerpo ── */}
+        <div className="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-[1.15fr_1fr] md:divide-x divide-gray-200">
+          {/* Izquierda: elegir destino */}
+          <div className="p-4 space-y-4">
+            <div className="grid grid-cols-2 gap-1 p-1 bg-gray-100 rounded-xl" role="tablist">
+              <button role="tab" aria-selected={mode === "color"} onClick={() => switchMode("color")} className={tabCls("color")}>Cambiar color</button>
+              <button role="tab" aria-selected={mode === "style"} onClick={() => switchMode("style")} className={tabCls("style")}>Cambiar estilo</button>
             </div>
-          )}
 
-          {mode === "color" && (
-            <div>
-              <div className="text-gray-600 font-medium">Nuevo color <span className="font-normal text-gray-400">· mismo estilo {srcWo?.style_code || srcWo?.estilo || ""}</span></div>
-              {loadingOpts && !srvOrders ? (
-                <div className="mt-1 text-gray-500 flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Buscando órdenes y saldos del mismo estilo…</div>
-              ) : colorChoices.length === 0 ? (
-                <div className="mt-1 text-gray-500">Este estilo no tiene otro color en ninguna orden activa.</div>
-              ) : (
-                <div className="mt-1 flex flex-wrap gap-1.5">
-                  {colorChoices.map((c) => {
-                    const on = pickedChoice && pickedChoice.woId === c.woId && pickedChoice.color === c.color;
-                    const none = c.free === 0 && !(c.bal > 0);
-                    return (
-                      <button key={`${c.woId}|${c.color}`} disabled={none} onClick={() => pickColorChoice(c)}
-                        title={none ? "Sin piezas disponibles" : c.own ? "Misma orden" : `Orden ${c.woNo}${c.po ? ` · PO ${c.po}` : ""}`}
-                        className={`px-2.5 py-1 rounded-lg border text-left ${on ? "border-orange-600 bg-orange-50 text-orange-800" : none ? "border-gray-100 text-gray-300 cursor-not-allowed" : "border-gray-200 hover:border-gray-400 text-gray-700"}`}>
-                        <span className={on ? "font-semibold" : ""}>{c.color}</span>
-                        <span className={`font-normal ${none ? "" : "text-gray-500"}`}> · {c.free == null ? "disponible" : `${fmt(c.free)} libres`}</span>
-                        {c.bal > 0 && <span className="font-normal text-amber-700"> · +{fmt(c.bal)} saldo</span>}
-                        {!c.own && <span className={`block text-[10px] leading-tight ${none ? "" : "text-gray-400"}`}>{c.woNo}{c.po ? ` · PO ${c.po}` : ""}</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-            </div>
-          )}
-
-          {mode === "color" && !loadingOpts && (
-            <div>
-              <div className="text-gray-600 font-medium">
-                Saldos de días pasados <span className="font-normal text-gray-400">· mismo estilo y cliente</span>
-              </div>
-              {sameStyleBal.length === 0 ? (
-                <div className="mt-1 text-gray-500">
-                  {srvBal ? "No hay días pasados con piezas sin coser para este estilo." : "No se pudieron leer los saldos (la captura de piso no está ligada a las órdenes)."}
-                </div>
-              ) : (
-                <>
-                  <p className="text-gray-400">Marque un día para tomar sus piezas. El día se cierra con lo que sí se cosió.</p>
-                  <div className="mt-1 max-h-40 overflow-y-auto border rounded-lg divide-y">
-                    {sameStyleBal.map((r) => {
-                      const k = `${r.work_order_id}|${balKey(r)}`;
-                      const d = String(r.assigned_date).slice(0, 10);
-                      const isTarget = pickedChoice && pickedChoice.woId === Number(r.work_order_id);
-                      const on = isTarget && pickedBal.has(balKey(r));
-                      const usable = rowColorChoices(r).length > 0;
+            {mode === "color" && (
+              <section>
+                <H hint={`mismo estilo ${srcWo?.style_code || srcWo?.estilo || ""}`}>Nuevo color</H>
+                {loadingOpts && !srvOrders ? (
+                  <div className="text-gray-500 flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Buscando órdenes y saldos del mismo estilo…</div>
+                ) : colorChoices.length === 0 ? (
+                  <div className="text-gray-500">Este estilo no tiene otro color en ninguna orden activa.</div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {colorChoices.map((c) => {
+                      const on = pickedChoice && pickedChoice.woId === c.woId && pickedChoice.color === c.color;
+                      const none = c.free === 0 && !(c.bal > 0);
                       return (
-                        <label key={k} className={`flex items-start gap-2 px-3 py-1.5 ${usable ? "cursor-pointer hover:bg-amber-50" : "opacity-50 cursor-not-allowed"} ${on ? "bg-amber-50" : ""}`}>
-                          <input type="checkbox" className="mt-0.5 accent-orange-600" disabled={!usable} checked={!!on} onChange={() => pickBalanceRow(r)} />
-                          <span className="flex-1 min-w-0">
-                            <span className="flex justify-between gap-2">
-                              <span className="text-gray-900 truncate">
-                                {d.slice(8)}/{d.slice(5, 7)} · Línea {r.line_no} · <span className="font-semibold">{r.work_order_no}</span>
-                                {(r.colors || []).length ? ` · ${r.colors.join(", ")}` : ""}
-                              </span>
-                              <span className="text-amber-800 font-semibold shrink-0">{fmt(r.balance)} pzas</span>
-                            </span>
-                            <span className="block text-gray-500">{fmt(r.assigned)} asignadas · {fmt(r.produced)} cosidas</span>
-                            {!usable && (
-                              <span className="block text-gray-500">
-                                {Number(r.work_order_id) === Number(a.work_order_id) && (r.colors || []).map(norm).includes(norm(a.color))
-                                  ? "Mismo color de esta casilla: no es un cambio de color."
-                                  : "Su color no está disponible en la orden."}
-                              </span>
-                            )}
-                            {suspicious(r) && <span className="block text-rose-700">La línea capturó producción sin ligar la orden: puede que ya estén hechas.</span>}
-                          </span>
-                        </label>
+                        <button key={`${c.woId}|${c.color}`} disabled={none} onClick={() => pickColorChoice(c)}
+                          title={none ? "Sin piezas disponibles" : c.own ? "Misma orden" : `Orden ${c.woNo}${c.po ? ` · PO ${c.po}` : ""}`}
+                          className={`text-left rounded-xl border px-3 py-2 transition-colors ${on ? "border-orange-600 bg-orange-50 ring-1 ring-orange-600" : none ? "border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed" : "border-gray-200 bg-white hover:border-gray-400"}`}>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className={`text-[14px] font-bold ${on ? "text-orange-800" : none ? "" : "text-gray-900"}`}>{c.color}</span>
+                            <span className={`text-[11px] tabular-nums ${none ? "" : "text-gray-500"}`}>{c.free == null ? "disponible" : `${fmt(c.free)} libres`}</span>
+                          </div>
+                          <div className={`text-[10px] truncate ${none ? "" : "text-gray-400"}`}>{c.own ? "Misma orden" : `${c.woNo}${c.po ? ` · PO ${c.po}` : ""}`}</div>
+                          {c.bal > 0 && <div className="text-[11px] text-amber-700 font-medium">+{fmt(c.bal)} pzas de saldo</div>}
+                        </button>
                       );
                     })}
                   </div>
-                </>
-              )}
-            </div>
-          )}
+                )}
+              </section>
+            )}
 
-          {mode === "style" && targetWo && (
-            <div>
-              <div className="text-gray-600 font-medium">Color</div>
-              {colorOptions.length === 0 ? (
-                <div className="mt-1 text-gray-500">{mode === "color" ? "Esta orden no tiene otro color." : "La orden no tiene desglose por color."}</div>
-              ) : (
-                <div className="mt-1 flex flex-wrap gap-1.5">
-                  {colorOptions.map((c) => (
-                    <button key={c.color} onClick={() => { setNewColor(c.color); setError(null); }}
-                      className={`px-2.5 py-1 rounded-lg border ${newColor === c.color ? "border-orange-600 bg-orange-50 text-orange-800 font-semibold" : "border-gray-200 hover:border-gray-400 text-gray-700"}`}>
-                      {c.color}{c.free != null && <span className="text-gray-500 font-normal"> · {fmt(c.free)} libres</span>}
+            {mode === "color" && !loadingOpts && (
+              <section>
+                <H hint="mismo estilo y cliente">Saldos de días pasados</H>
+                {sameStyleBal.length === 0 ? (
+                  <div className="text-gray-500">
+                    {srvBal ? "No hay días pasados con piezas sin coser para este estilo." : "No se pudieron leer los saldos (la captura de piso no está ligada a las órdenes)."}
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-gray-400 -mt-1 mb-1.5">Marque un día para tomar sus piezas. El día se cierra con lo que sí se cosió.</p>
+                    <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                      {sameStyleBal.map((r) => {
+                        const d = String(r.assigned_date).slice(0, 10);
+                        const isTarget = pickedChoice && pickedChoice.woId === Number(r.work_order_id);
+                        const on = isTarget && pickedBal.has(balKey(r));
+                        const usable = rowColorChoices(r).length > 0;
+                        return (
+                          <label key={`${r.work_order_id}|${balKey(r)}`}
+                            className={`flex items-start gap-2.5 rounded-xl border px-3 py-2 ${usable ? "cursor-pointer bg-white hover:border-amber-400" : "bg-gray-50 border-gray-100 opacity-60 cursor-not-allowed"} ${on ? "border-amber-500 bg-amber-50 ring-1 ring-amber-500" : "border-gray-200"}`}>
+                            <input type="checkbox" className="mt-0.5 accent-orange-600" disabled={!usable} checked={!!on} onChange={() => pickBalanceRow(r)} />
+                            <span className="flex-1 min-w-0">
+                              <span className="flex items-baseline justify-between gap-2">
+                                <span className="text-gray-900 font-semibold">{d.slice(8)}/{d.slice(5, 7)} · Línea {r.line_no}</span>
+                                <span className="text-amber-800 font-bold tabular-nums shrink-0">{fmt(r.balance)} pzas</span>
+                              </span>
+                              <span className="block text-gray-600 truncate">{r.work_order_no}{(r.colors || []).length ? ` · ${r.colors.join(", ")}` : ""}</span>
+                              <span className="block text-gray-400">{fmt(r.assigned)} asignadas · {fmt(r.produced)} cosidas</span>
+                              {!usable && (
+                                <span className="block text-gray-500">
+                                  {Number(r.work_order_id) === Number(a.work_order_id) && (r.colors || []).map(norm).includes(norm(a.color))
+                                    ? "Mismo color de esta casilla: no es un cambio de color."
+                                    : "Su color no está disponible en la orden."}
+                                </span>
+                              )}
+                              {suspicious(r) && <span className="block text-rose-700">La línea capturó producción sin ligar la orden: puede que ya estén hechas.</span>}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </section>
+            )}
+
+            {mode === "style" && (
+              <section>
+                <H>Orden con el nuevo estilo</H>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input id="urgent-search" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar orden"
+                    placeholder="Buscar por orden, estilo, cliente o PO"
+                    className="w-full pl-8 pr-2 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500" />
+                </div>
+                <div className="mt-2 space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                  {candidates.length === 0 && <div className="text-gray-500 px-1">Ninguna orden con piezas libres o saldo de días pasados coincide.</div>}
+                  {candidates.map(({ w, free, bal }) => (
+                    <button key={w.id} onClick={() => pickTarget(w.id)}
+                      className={`w-full text-left rounded-xl border px-3 py-2 transition-colors ${targetId === w.id ? "border-orange-600 bg-orange-50 ring-1 ring-orange-600" : "border-gray-200 bg-white hover:border-gray-400"}`}>
+                      <div className="flex justify-between gap-2">
+                        <span className="font-semibold text-gray-900 truncate">{w.work_order_no}</span>
+                        <span className="text-gray-500 shrink-0 tabular-nums">
+                          {fmt(free)} libres{bal > 0 && <span className="text-amber-700"> · +{fmt(bal)} saldo</span>}
+                        </span>
+                      </div>
+                      <div className="text-gray-500 truncate">{w.style_code || w.estilo || "—"} · {w.style_description} · {w.customer_name}</div>
                     </button>
                   ))}
                 </div>
-              )}
-            </div>
-          )}
+              </section>
+            )}
 
-          {mode === "style" && balRows.length > 0 && (
-            <div>
-              <div className="text-gray-600 font-medium">
-                Saldos de días pasados <span className="font-normal text-gray-400">· {workOrders.find((w) => w.id === balTargetId)?.work_order_no}</span>
-              </div>
-              <p className="text-gray-400">Lo que no se cosió esos días. Al tomarlos, el día se cierra con lo que sí se cosió.</p>
-              <div className="mt-1 max-h-32 overflow-y-auto border rounded-lg divide-y">
-                {balRows.map((r) => {
-                  const k = balKey(r);
-                  const d = String(r.assigned_date).slice(0, 10);
-                  return (
-                    <label key={k} className={`flex items-start gap-2 px-3 py-1.5 cursor-pointer hover:bg-amber-50 ${pickedBal.has(k) ? "bg-amber-50" : ""}`}>
-                      <input type="checkbox" className="mt-0.5 accent-orange-600" checked={pickedBal.has(k)} onChange={() => toggleBal(r)} />
-                      <span className="flex-1 min-w-0">
-                        <span className="flex justify-between gap-2">
-                          <span className="text-gray-900">Línea {r.line_no} · {d.slice(8)}/{d.slice(5, 7)}{(r.colors || []).length ? ` · ${r.colors.join(", ")}` : ""}</span>
-                          <span className="text-amber-800 font-semibold shrink-0">{fmt(r.balance)} pzas</span>
+            {mode === "style" && targetWo && (
+              <section>
+                <H>Color</H>
+                {colorOptions.length === 0 ? (
+                  <div className="text-gray-500">La orden no tiene desglose por color.</div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {colorOptions.map((c) => (
+                      <button key={c.color} onClick={() => { setNewColor(c.color); setError(null); }}
+                        className={`px-3 py-1.5 rounded-lg border ${newColor === c.color ? "border-orange-600 bg-orange-50 text-orange-800 font-semibold ring-1 ring-orange-600" : "border-gray-200 bg-white hover:border-gray-400 text-gray-700"}`}>
+                        {c.color}{c.free != null && <span className="text-gray-500 font-normal"> · {fmt(c.free)} libres</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {mode === "style" && balRows.length > 0 && (
+              <section>
+                <H hint={workOrders.find((w) => w.id === balTargetId)?.work_order_no}>Saldos de días pasados</H>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {balRows.map((r) => {
+                    const k = balKey(r);
+                    const d = String(r.assigned_date).slice(0, 10);
+                    const on = pickedBal.has(k);
+                    return (
+                      <label key={k} className={`flex items-start gap-2.5 rounded-xl border px-3 py-2 cursor-pointer bg-white hover:border-amber-400 ${on ? "border-amber-500 bg-amber-50 ring-1 ring-amber-500" : "border-gray-200"}`}>
+                        <input type="checkbox" className="mt-0.5 accent-orange-600" checked={on} onChange={() => toggleBal(r)} />
+                        <span className="flex-1 min-w-0">
+                          <span className="flex items-baseline justify-between gap-2">
+                            <span className="text-gray-900 font-semibold">{d.slice(8)}/{d.slice(5, 7)} · Línea {r.line_no}{(r.colors || []).length ? ` · ${r.colors.join(", ")}` : ""}</span>
+                            <span className="text-amber-800 font-bold tabular-nums shrink-0">{fmt(r.balance)} pzas</span>
+                          </span>
+                          <span className="block text-gray-400">{fmt(r.assigned)} asignadas · {fmt(r.produced)} cosidas</span>
+                          {suspicious(r) && <span className="block text-rose-700">La línea capturó producción sin ligar la orden: puede que ya estén hechas.</span>}
                         </span>
-                        <span className="block text-gray-500">{fmt(r.assigned)} asignadas · {fmt(r.produced)} cosidas</span>
-                        {suspicious(r) && (
-                          <span className="block text-rose-700">La línea capturó producción sin ligar la orden: puede que ya estén hechas.</span>
-                        )}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {available != null && (
-            <div className={`text-[11px] ${qtyNum > available ? "text-rose-700" : "text-gray-500"}`}>
-              Disponible para el cambio: <span className="font-semibold">{fmt(available)} pzas</span>
-              {pickedSum > 0 && ` (${fmt(baseFree)} libres + ${fmt(pickedSum)} de saldos)`}
-              {qtyNum > available && " · marque más saldos o baje la cantidad."}
-            </div>
-          )}
-
-          <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
-            <div>
-              <label className="text-gray-600 font-medium" htmlFor="urgent-qty">Piezas a cambiar</label>
-              <input id="urgent-qty" type="number" min={1} max={movable} value={qty} onChange={(e) => setQty(e.target.value)}
-                className="mt-1 w-full px-2 py-1.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500" />
-            </div>
-            {(() => {
-              const max = available == null ? movable : Math.min(movable, available);
-              return (
-                <button onClick={() => setQty(String(max))} className="px-2.5 py-1.5 border rounded-lg text-gray-600 hover:bg-gray-50">Máx. ({fmt(max)})</button>
-              );
-            })()}
-          </div>
-
-          <div>
-            <label className="text-gray-600 font-medium" htmlFor="urgent-reason">Motivo</label>
-            <textarea id="urgent-reason" rows={2} value={reason} onChange={(e) => setReason(e.target.value)}
-              placeholder="Ej. No llegó la tela azul; el cliente adelantó el estilo 12"
-              className="mt-1 w-full px-2 py-1.5 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-orange-500" />
-            {reason.trim().length < 5 ? (
-              <p className={`mt-0.5 ${reason.trim().length > 0 ? "text-rose-600" : "text-gray-400"}`}>
-                Mínimo 5 caracteres ({reason.trim().length}/5). Queda en la bitácora junto con su nombre.
-              </p>
-            ) : (
-              <p className="text-gray-400 mt-0.5">Queda en la bitácora junto con su nombre.</p>
+                      </label>
+                    );
+                  })}
+                </div>
+              </section>
             )}
           </div>
 
-          <label className="flex items-center gap-2 text-gray-700">
-            <input type="checkbox" checked={sendToLines} onChange={(e) => setSendToLines(e.target.checked)} className="accent-orange-600" />
-            Enviar el cambio a los líderes de línea
-          </label>
+          {/* Derecha: resumen y confirmación */}
+          <div className="p-4 space-y-4 bg-gray-50/50">
+            <section>
+              <H>Resumen del cambio</H>
+              <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5">
+                <div className="text-[11px] text-gray-500">Antes</div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-semibold text-gray-900 truncate">{srcWo?.work_order_no || `#${a.work_order_id}`}</span>
+                  <span className="text-[14px] font-bold text-gray-900 shrink-0">{a.color || "—"}</span>
+                </div>
+                <div className="text-gray-500 tabular-nums">
+                  {fmt(srcQty)} pzas{produced > 0 ? ` · ${fmt(produced)} ya cosidas` : ""} · {fmt(movable)} se pueden cambiar
+                </div>
+              </div>
+              <div className="flex justify-center py-1 text-orange-600" aria-hidden>↓</div>
+              <div className={`rounded-xl border px-3 py-2.5 ${targetWo && (newColor || colorOptions.length === 0) ? "border-orange-300 bg-orange-50" : "border-dashed border-gray-300 bg-white"}`}>
+                <div className="text-[11px] text-gray-500">Después</div>
+                {targetWo && (newColor || (mode === "style" && colorOptions.length === 0)) ? (
+                  <>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-semibold text-orange-900 truncate">{targetWo.work_order_no}</span>
+                      <span className="text-[14px] font-bold text-orange-800 shrink-0">{newColor || "—"}</span>
+                    </div>
+                    <div className="text-orange-800 tabular-nums">
+                      {mode === "style" ? `Hasta ${fmt(qtyNum)} pzas` : `${fmt(qtyNum)} pzas`}{pickedSum > 0 ? ` · ${fmt(pickedSum)} de saldos` : ""}
+                    </div>
+                    {mode === "style" && (
+                      <div className="text-[11px] text-gray-500">
+                        Se ponen las que quepan en el tiempo liberado: si el estilo nuevo tarda más, caben menos.
+                      </div>
+                    )}
+                    {qtyNum > movable ? (
+                      <div className="text-rose-700">Máximo {fmt(movable)} pzas: el resto ya está cosido.</div>
+                    ) : qtyNum > 0 && qtyNum < srcQty && (
+                      <div className="text-gray-600">Se quedan {fmt(srcQty - qtyNum)} pzas de {srcLabel}.</div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-gray-400">{mode === "color" ? "Elija un color o un saldo a la izquierda." : "Elija una orden a la izquierda."}</div>
+                )}
+              </div>
+            </section>
 
-          {(targetWo && (newColor || colorOptions.length === 0) && qtyNum > 0) && (
-            <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-orange-900">
-              <span className="font-semibold">{fmt(qtyNum)} pzas</span>: {srcLabel} → <span className="font-semibold">{tgtLabel}</span>
-              {qtyNum < srcQty && <div className="text-orange-800">Se quedan {fmt(srcQty - qtyNum)} pzas de {srcLabel}.</div>}
-            </div>
-          )}
+            <section>
+              <label className="text-[12px] font-semibold text-gray-800" htmlFor="urgent-qty">
+                {mode === "style" ? `Piezas a quitar de ${srcWo?.style_code || srcWo?.estilo || "la orden actual"}` : "Piezas a cambiar"}
+              </label>
+              <div className="mt-1 grid grid-cols-[1fr_auto] gap-2">
+                <input id="urgent-qty" type="number" min={1} max={movable} value={qty} onChange={(e) => setQty(e.target.value)}
+                  aria-invalid={qtyNum > maxQty}
+                  className={`w-full px-3 py-2 border rounded-xl bg-white tabular-nums focus:outline-none focus:ring-2 ${qtyNum > maxQty ? "border-rose-400 focus:ring-rose-500" : "focus:ring-orange-500"}`} />
+                <button onClick={() => setQty(String(maxQty))} className="px-3 py-2 border rounded-xl bg-white text-gray-700 hover:bg-gray-50">Máx. ({fmt(maxQty)})</button>
+              </div>
+              {qtyNum > movable && (
+                <div className="mt-1 text-[11px] text-rose-700 font-medium">
+                  Esta casilla sólo tiene {fmt(movable)} pzas sin coser
+                  {produced > 0 ? ` (${fmt(produced)} de ${fmt(srcQty)} ya están cosidas y se quedan)` : ""}. Use Máx. o baje la cantidad.
+                </div>
+              )}
+              {available != null && (
+                <div className={`mt-1 text-[11px] ${qtyNum > available ? "text-rose-700" : "text-gray-500"}`}>
+                  Disponible en la orden destino: <span className="font-semibold">{fmt(available)} pzas</span>
+                  {pickedSum > 0 && ` (${fmt(baseFree)} libres + ${fmt(pickedSum)} de saldos)`}
+                  {qtyNum > available && " · marque más saldos o baje la cantidad."}
+                </div>
+              )}
+            </section>
 
-          {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800" role="alert">{error}</div>}
+            <section>
+              <label className="text-[12px] font-semibold text-gray-800" htmlFor="urgent-reason">Motivo</label>
+              <textarea id="urgent-reason" rows={3} value={reason} onChange={(e) => setReason(e.target.value)}
+                placeholder="Ej. No llegó la tela azul; el cliente adelantó el estilo 12"
+                className="mt-1 w-full px-3 py-2 border rounded-xl bg-white resize-none focus:outline-none focus:ring-2 focus:ring-orange-500" />
+              <p className={`text-[11px] ${reason.trim().length > 0 && reason.trim().length < 5 ? "text-rose-600" : "text-gray-400"}`}>
+                {reason.trim().length < 5 ? `Mínimo 5 caracteres (${reason.trim().length}/5). ` : ""}Queda en la bitácora con su nombre y avisa al CEO.
+              </p>
+            </section>
+
+            <label className="flex items-center gap-2 text-gray-700">
+              <input type="checkbox" checked={sendToLines} onChange={(e) => setSendToLines(e.target.checked)} className="accent-orange-600" />
+              Enviar el cambio a los líderes de línea
+            </label>
+
+            {error && <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800" role="alert">{error}</div>}
+          </div>
         </div>
 
-        <div className="px-4 py-3 border-t flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Cancelar</button>
+        {/* ── Acciones ── */}
+        <div className="px-4 py-3 border-t bg-white flex items-center justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-[12px] font-medium bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Cancelar</button>
           <button onClick={submit} disabled={!ready}
             title={ready ? "" : [
               mode === "style" && !targetId ? "Elija la orden" : "",
@@ -537,7 +580,7 @@ export default function UrgentChangeModal({
               available != null && qtyNum > available ? `Sólo hay ${available} disponibles: marque saldos` : "",
               reason.trim().length < 5 ? "Motivo de al menos 5 caracteres" : "",
             ].filter(Boolean).join(" · ")}
-            className="px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5">
+            className="px-4 py-2 text-[12px] font-semibold bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5">
             {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
             {mode === "color" ? "Cambiar color" : "Cambiar estilo"}
           </button>

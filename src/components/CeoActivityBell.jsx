@@ -276,7 +276,7 @@ function UrgentDetail({ d = {} }) {
       <dt className="text-gray-500">Antes</dt>
       <dd className="text-gray-900">{side(d.from)}</dd>
       <dt className="text-gray-500">Ahora</dt>
-      <dd className="font-semibold text-gray-900">{side(d.to)} · {Math.round(d.movedQty || 0).toLocaleString()} pzas</dd>
+      <dd className="font-semibold text-gray-900">{side(d.to)} · {Math.round(d.placedQty ?? d.movedQty ?? 0).toLocaleString()} pzas{d.placedQty != null && d.placedQty !== d.movedQty ? ` (en lugar de ${Math.round(d.movedQty).toLocaleString()})` : ""}</dd>
       {d.sourceLeft > 0 && (
         <>
           <dt className="text-gray-500">Se quedan</dt>
